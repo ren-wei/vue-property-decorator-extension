@@ -1,0 +1,145 @@
+{
+  "comments": {
+    "blockComment": [
+      "<!--",
+      "-->"
+    ]
+  },
+  "brackets": [
+    [
+      "<!--",
+      "-->"
+    ],
+    [
+      "<",
+      ">"
+    ],
+    [
+      "{",
+      "}"
+    ],
+    [
+      "(",
+      ")"
+    ]
+  ],
+  "colorizedBracketPairs": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "{{",
+      "}}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ]
+  ],
+  "autoClosingPairs": [
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "(",
+      "close": ")"
+    },
+    {
+      "open": "'",
+      "close": "'"
+    },
+    {
+      "open": "\"",
+      "close": "\""
+    }
+  ],
+  "surroundingPairs": [
+    {
+      "open": "'",
+      "close": "'"
+    },
+    {
+      "open": "\"",
+      "close": "\""
+    },
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "(",
+      "close": ")"
+    },
+    {
+      "open": "<",
+      "close": ">"
+    }
+  ],
+  "onEnterRules": [
+    // 当遇到单 > 时，增加缩进
+    {
+      "beforeText": "^\\s*>\\s*$",
+      "action": {
+        "indent": "indent"
+      }
+    },
+    // 当处于开始标签闭合前时，不改变缩进
+    {
+      "beforeText": "^\\s*<[^>]*$",
+      "afterText": "^\\s*/?>",
+      "action": {
+        "indent": "none"
+      }
+    },
+    // 当遇到开始标签未闭合时，增加缩进
+    {
+      "beforeText": "^\\s*<[^>]*$",
+      "action": {
+        "indent": "indent"
+      }
+    },
+    // 当遇到处于开始标签和结束标签中间时，插入两行，第一行增加缩进，第二行减少缩进
+    {
+      "beforeText": "^\\s*<([^/][^>]+)>\\s*$",
+      "afterText": "^\\s*</([^>]+)>\\s*$",
+      "action": {
+        "indent": "indentOutdent"
+      }
+    },
+    // 当遇到开始标签时，增加缩进
+    {
+      "beforeText": "^\\s*<([^/][^>]+)>\\s*$",
+      "action": {
+        "indent": "indent"
+      }
+    },
+    // 当遇到结束标签时，不改变缩进
+    {
+      "beforeText": "^\\s*</([^>]+)>\\s*$",
+      "action": {
+        "indent": "none"
+      }
+    },
+    // 当遇到自闭合标签时，不改变缩进
+    {
+      "beforeText": "^\\s*<([^/][^>]+)/>\\s*$",
+      "action": {
+        "indent": "none"
+      }
+    },
+  ],
+}

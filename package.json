@@ -1,0 +1,148 @@
+{
+  "name": "vue-property-decorator-extension",
+  "description": "Rust lsp extension template for vscode.",
+  "author": "ren-wei",
+  "license": "MIT",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ren-wei/vue-property-decorator-extension.git"
+  },
+  "publisher": "ren-wei",
+  "categories": [],
+  "keywords": [],
+  "engines": {
+    "vscode": "^1.70.1"
+  },
+  "activationEvents": [
+    "onLanguage:typescript"
+  ],
+  "main": "./client/out/extension",
+  "contributes": {
+    "breakpoints": [
+      {
+        "language": "vue"
+      }
+    ],
+    "commands": [
+      {
+        "command": "vue2-ts-decorator.restart.tsserver",
+        "title": "Vue2TsDecorator: Restart tsserver"
+      }
+    ],
+    "languages": [
+      {
+        "id": "vue",
+        "aliases": [
+          "Vue",
+          "vue"
+        ],
+        "extensions": [
+          ".vue"
+        ],
+        "configuration": "./languages/vue-language-configuration.json"
+      },
+      {
+        "id": "vue-html",
+        "aliases": [
+          "Vue-html"
+        ],
+        "configuration": "./languages/vue-html-language-configuration.json"
+      },
+      {
+        "id": "vue-postcss",
+        "aliases": [
+          "Vue-PostCSS",
+          "Vue-POSTCSS",
+          "vue-postcss"
+        ],
+        "configuration": "./languages/vue-postcss-language-configuration.json"
+      },
+      {
+        "id": "vue-sugarss",
+        "aliases": [
+          "Vue-SugarSS",
+          "Vue-SUGARSS",
+          "vue-sugarss"
+        ],
+        "configuration": "./languages/vue-sugarss-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vue",
+        "scopeName": "source.vue",
+        "path": "./syntaxes/vue-generated.json",
+        "embeddedLanguages": {
+          "text.html.basic": "html",
+          "text.html.vue-html": "vue-html",
+          "text.html.markdown": "md",
+          "source.css": "css",
+          "source.css.scss": "scss",
+          "source.css.less": "less",
+          "source.css.postcss": "vue-postcss",
+          "source.css.sugarss": "vue-sugarss",
+          "source.sass": "sass",
+          "source.stylus": "stylus",
+          "source.js": "javascript",
+          "source.ts": "typescript",
+          "source.json": "json"
+        }
+      },
+      {
+        "language": "vue-postcss",
+        "scopeName": "source.css.postcss",
+        "path": "./syntaxes/vue-postcss.json"
+      },
+      {
+        "language": "vue-sugarss",
+        "scopeName": "source.css.sugarss",
+        "path": "./syntaxes/vue-sugarss.json"
+      },
+      {
+        "language": "vue-html",
+        "scopeName": "text.html.vue-html",
+        "path": "./syntaxes/vue-html.tmLanguage.json",
+        "embeddedLanguages": {
+          "source.js": "javascript"
+        }
+      },
+      {
+        "scopeName": "markdown.vue.codeblock",
+        "path": "./syntaxes/markdown-vue.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.vue": "vue"
+        }
+      }
+    ],
+    "configuration": {},
+    "semanticTokenScopes": [
+      {
+        "scopes": {
+          "property.refValue": [
+            "entity.name.function"
+          ]
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -b",
+    "watch": "tsc -b -w",
+    "lint": "eslint ./client/src --ext .ts,.tsx",
+    "postinstall": "cd client && npm install && cd ..",
+    "build": "cd server && cargo build && cargo build --release --target x86_64-pc-windows-gnu && cd .. && npx vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@typescript-eslint/eslint-plugin": "^5.42.0",
+    "@typescript-eslint/parser": "^5.42.0",
+    "eslint": "^8.26.0",
+    "eslint-plugin-strict-typescript": "^1.0.3",
+    "typescript": "^4.9.4"
+  }
+}

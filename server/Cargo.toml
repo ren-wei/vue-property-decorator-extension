@@ -1,0 +1,23 @@
+[package]
+name = "vue-property-decorator-extension-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+lsp-textdocument = "0.3.2"
+regex = "1.10.2"
+serde_json = "1.0.111"
+tokio = { version = "1.35.1", features = ["full"] }
+tower-lsp = "0.20.0"
+tracing = "0.1.40"
+async-lsp-client = { version = "0.2.0", features = ["tracing"] }
+walkdir = "2.5.0"
+lazy_static = "1.5.0"
+html-languageservice = { version = "0.7.1", features = ["full"] }
+swc_ecma_parser = { version = "6.0.0", features = ["typescript"] }
+swc_common = { version = "5.0.0", features = ["concurrent"] }
+swc_ecma_ast = { version = "5.0.0", features = ["serde-impl"] }
+swc_atoms = "3.0.0"
+percent-encoding = "2.3.1"
