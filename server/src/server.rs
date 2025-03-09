@@ -2,12 +2,17 @@ use std::sync::Arc;
 
 use core::fmt::Debug;
 use lsp_textdocument::TextDocuments;
+use serde_json::Value;
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::{
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, Hover,
-    HoverParams, InitializeParams, InitializeResult, InitializedParams, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandParams, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult,
+    InitializedParams, SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
+    SemanticTokensResult, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind,
 };
 use tower_lsp::{Client, LanguageServer};
 use tracing::{error, info, instrument, warn};
@@ -75,6 +80,12 @@ impl LanguageServer for VueLspServer {
                     text_document_sync: Some(TextDocumentSyncCapability::Kind(
                         TextDocumentSyncKind::INCREMENTAL,
                     )),
+                    hover_provider: result.capabilities.hover_provider,
+                    completion_provider: result.capabilities.completion_provider,
+                    definition_provider: result.capabilities.definition_provider,
+                    document_symbol_provider: result.capabilities.document_symbol_provider,
+                    semantic_tokens_provider: result.capabilities.semantic_tokens_provider,
+                    code_action_provider: result.capabilities.code_action_provider,
                     ..Default::default()
                 },
             })
@@ -140,13 +151,104 @@ impl LanguageServer for VueLspServer {
         info!("done");
     }
 
-    async fn hover(&self, _params: HoverParams) -> Result<Option<Hover>> {
-        error!("method not found");
-        Err(Error::method_not_found())
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        self.ts_server
+            .lock()
+            .await
+            .hover(params.text_document_position_params)
+            .await
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        self.ts_server.lock().await.completion(params).await
+    }
+
+    async fn completion_resolve(&self, mut params: CompletionItem) -> Result<CompletionItem> {
+        /// 判断是否来自 ts_server 并且移除标记，返回原始 uri
+        fn get_original_uri(params: &mut CompletionItem) -> Option<Value> {
+            let data = params.data.as_mut()?;
+            if data.is_object() {
+                let data = data.as_object_mut()?;
+                if data.contains_key("from_ts_server") {
+                    data.remove("from_ts_server");
+                    Some(data.remove("original_uri").unwrap())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        let original_uri = get_original_uri(&mut params);
+        if let Some(original_uri) = original_uri {
+            self.ts_server
+                .lock()
+                .await
+                .completion_resolve(params, serde_json::from_value(original_uri).unwrap())
+                .await
+        } else {
+            Ok(params)
+        }
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        // TODO: is_in_template
+        self.ts_server
+            .lock()
+            .await
+            .goto_definition(params, false)
+            .await
+    }
+
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
+        // TODO: script 的 document_symbol 添加到 html 下
+        self.ts_server.lock().await.document_symbol(params).await
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        self.ts_server
+            .lock()
+            .await
+            .semantic_tokens_full(params)
+            .await
+    }
+
+    async fn semantic_tokens_range(
+        &self,
+        params: SemanticTokensRangeParams,
+    ) -> Result<Option<SemanticTokensRangeResult>> {
+        self.ts_server
+            .lock()
+            .await
+            .semantic_tokens_range(params)
+            .await
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        self.ts_server.lock().await.code_action(params).await
+    }
+
+    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {
+        let text_documents = self.text_documents.lock().await;
+        if params.command == "vue2-ts-decorator.restart.tsserver" {
+            self.ts_server.lock().await.restart(&text_documents).await;
+            Ok(None)
+        } else {
+            self.ts_server.lock().await.execute_command(params).await
+        }
     }
 
     async fn shutdown(&self) -> Result<()> {
-        warn!("shutdown");
+        self.ts_server.lock().await.shutdown().await;
         Ok(())
     }
 }
