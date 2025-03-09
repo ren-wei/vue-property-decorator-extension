@@ -2,17 +2,20 @@ mod combined_rendered_results;
 pub mod multi_threaded_comment;
 mod parse_document;
 mod parse_import_path;
+mod parse_script;
 mod parse_ts_file;
 mod parse_vue_file;
 mod render_cache;
-mod render_tree;
 mod template_compile;
 
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
 use lsp_textdocument::FullTextDocument;
-use render_cache::RenderCache;
-use render_tree::{InitRenderCache, RenderTree};
+use parse_script::{ExtendsComponent, RegisterComponent};
+use render_cache::{
+    ExtendsRelationship, RegisterRelationship, Relationship, RenderCache, RenderCacheGraph,
+    TransferRelationship, TsComponent, TsRenderCache, VueRenderCache,
+};
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
@@ -21,14 +24,12 @@ use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range, Url};
 use tracing::{error, warn};
 use walkdir::WalkDir;
 
-use crate::ast::TsFileExportResult;
-
 /// # 渲染器
 /// 将项目渲染到同目录下的加上 `.~$` 前缀的目录中
 pub struct Renderer {
     root_uri_target_uri: Option<(Url, Url)>,
     alias: HashMap<String, String>,
-    render_cache: HashMap<Url, RenderCache>,
+    render_cache: RenderCacheGraph,
 }
 
 impl Renderer {
@@ -36,7 +37,7 @@ impl Renderer {
         Renderer {
             root_uri_target_uri: None,
             alias: HashMap::new(),
-            render_cache: HashMap::new(),
+            render_cache: RenderCacheGraph::new(),
         }
     }
 
@@ -84,7 +85,7 @@ impl Renderer {
         let node_modules_target_path = target_root_path.join("node_modules");
 
         let target_root_uri = Url::from_file_path(target_root_path).unwrap();
-        self.render_to_target(root_uri, &target_root_uri).await;
+        self.render(root_uri, &target_root_uri).await;
 
         self.root_uri_target_uri = Some((root_uri.clone(), target_root_uri));
 
@@ -94,6 +95,18 @@ impl Renderer {
                 .await
                 .unwrap();
         }
+    }
+
+    /// 当文件更改时
+    /// * 重新解析当前组件
+    /// * 更新依赖的组件
+    pub fn update(
+        &mut self,
+        uri: &Url,
+        params: &DidChangeTextDocumentParams,
+        document: &FullTextDocument,
+    ) -> DidChangeTextDocumentParams {
+        todo!()
     }
 
     /// 从项目目录获取 tsconfig.json 并从中获取别名映射关系
@@ -116,9 +129,8 @@ impl Renderer {
     }
 
     /// 读取目录下的文件，并渲染到目标目录
-    async fn render_to_target(&self, root_uri: &Url, target_root_uri: &Url) {
+    async fn render(&mut self, root_uri: &Url, target_root_uri: &Url) {
         let root_path = root_uri.to_file_path().unwrap();
-        let mut render_tree = RenderTree::new();
         // 遍历目录
         for entry in WalkDir::new(root_path.clone())
             .follow_links(true)
@@ -142,74 +154,16 @@ impl Renderer {
                     }
                 }
                 if src_path.is_file() {
-                    // 如果是 vue 文件，进行初步解析
                     if src_path.extension().is_some_and(|v| v == "vue") {
-                        // 获取文档
-                        if let Ok(document) = Renderer::get_document_from_file(
-                            &Url::from_file_path(src_path).unwrap(),
-                        )
-                        .await
-                        {
-                            let result = parse_vue_file::init_parse_vue_file(&document);
-                            if let Some((cache, extends_component)) = result {
-                                let mut extends_uri = None;
-                                let mut export_name = None;
-                                if let Some(extends_component) = extends_component {
-                                    extends_uri =
-                                        self.get_uri_from_path(&uri, &extends_component.path);
-                                    export_name = extends_component.name;
-                                }
-                                render_tree.add_node(uri, cache, extends_uri.clone());
-                                let extends_list =
-                                    self.get_extends_list(extends_uri, export_name).await;
-                                for (uri, extends_uri) in extends_list {
-                                    render_tree.add_node(
-                                        uri,
-                                        InitRenderCache::TsTransfer(
-                                            src_path.to_string_lossy().to_string(),
-                                        ),
-                                        extends_uri,
-                                    );
-                                }
-                            } else {
-                                render_tree.add_node(uri, InitRenderCache::ResolveError, None);
-                            }
-                        }
+                        // 创建 vue 节点
+                        self.create_node(&uri).await;
                     } else {
                         // 如果不是 vue 文件，创建硬链接
                         fs::hard_link(src_path, target_path).await.unwrap();
 
-                        // 如果 ts 文件中存在组件定义，那么解析组件继承关系
                         if src_path.extension().is_some_and(|v| v == "ts") {
-                            if let Ok(document) = Renderer::get_document_from_file(
-                                &Url::from_file_path(src_path).unwrap(),
-                            )
-                            .await
-                            {
-                                if let Some((cache, extends_component)) =
-                                    parse_ts_file::parse_ts_file(&document).await
-                                {
-                                    let mut extends_uri = None;
-                                    let mut export_name = None;
-                                    if let Some(extends_component) = extends_component {
-                                        extends_uri =
-                                            self.get_uri_from_path(&uri, &extends_component.path);
-                                        export_name = extends_component.name;
-                                    }
-                                    render_tree.add_node(uri, cache, extends_uri.clone());
-                                    let extends_list =
-                                        self.get_extends_list(extends_uri, export_name).await;
-                                    for (uri, extends_uri) in extends_list {
-                                        render_tree.add_node(
-                                            uri,
-                                            InitRenderCache::TsTransfer(
-                                                src_path.to_string_lossy().to_string(),
-                                            ),
-                                            extends_uri,
-                                        );
-                                    }
-                                }
-                            }
+                            // 创建 ts 节点
+                            self.create_node(&uri).await;
                         }
                     }
                 }
@@ -217,9 +171,133 @@ impl Renderer {
                 warn!("walk error: {:?}", entry.unwrap_err());
             }
         }
-        // 从顶层节点开始渲染
-        for node in render_tree.roots {
-            node.render(vec![], root_uri, target_root_uri);
+        self.render_cache.flush();
+        self.render_cache.render(root_uri, target_root_uri);
+    }
+
+    /// 创建节点及相关的边
+    /// * 如果是 vue 文件，那么创建 vue 节点
+    /// * 如果是 ts 文件，那么创建 ts 节点
+    /// * 如果都不是或者创建失败，那么创建 Unknown 节点
+    async fn create_node(&mut self, uri: &Url) {
+        if Renderer::is_vue_component(uri) {
+            if self.create_vue_node(uri).await.is_none() {
+                self.crate_unknown_node(uri);
+            }
+        } else {
+            if self.create_ts_node(uri).await.is_none() {
+                self.crate_unknown_node(uri);
+            }
+        }
+    }
+
+    /// 创建 vue 节点
+    /// * 如果存在继承关系，那么创建继承边
+    /// * 如果存在注册关系，那么创建注册边
+    async fn create_vue_node(&mut self, uri: &Url) -> Option<()> {
+        let document = Renderer::get_document_from_file(uri).await.unwrap();
+        let result = parse_vue_file::parse_vue_file(&document)?;
+        self.render_cache.add_node(
+            uri,
+            RenderCache::VueRenderCache(VueRenderCache {
+                document,
+                template: result.template,
+                script: result.script,
+                style: result.style,
+                props: result.props,
+                render_insert_offset: result.render_insert_offset,
+                template_compile_result: result.template_compile_result,
+                mapping: result.mapping,
+            }),
+        );
+        self.create_extends_relation(uri, result.extends_component)
+            .await;
+        self.create_registers_relation(uri, result.registers).await;
+        Some(())
+    }
+
+    /// 创建 ts 节点
+    /// * 如果存在组件并且存在继承关系，那么创建继承边
+    /// * 如果存在组件并且存在注册关系，那么创建注册边
+    /// * 创建节点间中转关系
+    async fn create_ts_node(&mut self, uri: &Url) -> Option<()> {
+        let document = Renderer::get_document_from_file(uri).await.unwrap();
+        let result = parse_ts_file::parse_ts_file(&document)?;
+        let mut ts_component = None;
+        if let Some((props, extends_component, registers)) = result.ts_component {
+            ts_component = Some(TsComponent { props });
+            self.create_extends_relation(uri, extends_component).await;
+            self.create_registers_relation(uri, registers).await;
+        };
+        self.render_cache.add_node(
+            uri,
+            RenderCache::TsRenderCache(TsRenderCache {
+                ts_component,
+                local_exports: result.local_exports,
+            }),
+        );
+        for (local, export_name, path, is_star_export) in result.transfers {
+            if let Some(transfer_uri) = self.get_uri_from_path(uri, &path) {
+                if Renderer::is_uri_valid(&transfer_uri) {
+                    self.render_cache.add_virtual_edge(
+                        uri,
+                        &transfer_uri,
+                        Relationship::TransferRelationship(TransferRelationship {
+                            local,
+                            export_name,
+                            is_star_export,
+                        }),
+                    );
+                }
+            }
+        }
+        Some(())
+    }
+
+    fn crate_unknown_node(&mut self, uri: &Url) {
+        warn!("unknown node type: {}", uri.path());
+        self.render_cache.add_node(uri, RenderCache::Unknown);
+    }
+
+    /// 创建继承关系
+    async fn create_extends_relation(
+        &mut self,
+        uri: &Url,
+        extends_component: Option<ExtendsComponent>,
+    ) {
+        if let Some(component) = extends_component {
+            let extends_uri = self.get_uri_from_path(uri, &component.path);
+            if let Some(extends_uri) = extends_uri {
+                if Renderer::is_uri_valid(&extends_uri) {
+                    self.render_cache.add_virtual_edge(
+                        &uri,
+                        &extends_uri,
+                        Relationship::ExtendsRelationship(ExtendsRelationship {
+                            export_name: component.export_name,
+                        }),
+                    );
+                }
+            }
+        }
+    }
+
+    /// 创建注册关系，如果注册节点不存在，那么先创建节点
+    async fn create_registers_relation(&mut self, uri: &Url, registers: Vec<RegisterComponent>) {
+        for register in registers {
+            let register_uri = self.get_uri_from_path(&uri, &register.path);
+            if let Some(register_uri) = register_uri {
+                if Renderer::is_uri_valid(&register_uri) {
+                    self.render_cache.add_edge(
+                        uri,
+                        &register_uri,
+                        Relationship::RegisterRelationship(RegisterRelationship {
+                            registered_name: register.name,
+                            export_name: register.export,
+                            prop: register.prop,
+                        }),
+                    );
+                }
+            }
         }
     }
 
@@ -249,72 +327,6 @@ impl Renderer {
         }
     }
 
-    /// 根据继承的 uri 获取继承链
-    /// 如果继承 uri 是 ts 文件，那么从 ts 文件中递归寻找导出组件
-    async fn get_extends_list(
-        &self,
-        extends_uri: Option<Url>,
-        export_name: Option<String>,
-    ) -> Vec<(Url, Option<Url>)> {
-        // 继承链
-        let mut extends_list_result: Vec<(Url, Option<Url>)> = Vec::new();
-        // 可能继承的 uri (extends_uri, export_name, extends_list)
-        let mut possible_extends_uri =
-            vec![(extends_uri, export_name, extends_list_result.clone())];
-
-        // 对继承的 uri 进行分析
-        while let Some((uri, export_name, mut extends_list)) = possible_extends_uri.pop() {
-            if let Some(uri) = uri {
-                // 如果不是 ts 文件
-                if !uri
-                    .to_file_path()
-                    .unwrap()
-                    .extension()
-                    .is_some_and(|v| v.to_str() == Some("ts"))
-                {
-                    if export_name == None {
-                        // 增加继承链
-                        extends_list_result.append(&mut extends_list);
-                        break;
-                    } else {
-                        continue;
-                    }
-                }
-                let result = parse_ts_file::parse_ts_file_export(&uri, &export_name).await;
-                match result {
-                    TsFileExportResult::Current => {
-                        // 增加继承链
-                        extends_list_result.append(&mut extends_list);
-                        break;
-                    }
-                    TsFileExportResult::None => {}
-                    TsFileExportResult::Other(path, export_name) => {
-                        // 增加继承链
-                        if let Some(extends_uri) = self.get_uri_from_path(&uri, &path) {
-                            extends_list_result.append(&mut extends_list);
-                            possible_extends_uri =
-                                vec![(Some(extends_uri.clone()), export_name, vec![])];
-                            extends_list_result.push((uri, Some(extends_uri)));
-                        }
-                    }
-                    TsFileExportResult::Possible(path_list) => {
-                        for path in path_list {
-                            let extends_uri = self.get_uri_from_path(&uri, &path);
-                            let mut extends_list = extends_list.clone();
-                            extends_list.push((uri.clone(), extends_uri.clone()));
-                            possible_extends_uri.push((
-                                extends_uri,
-                                export_name.clone(),
-                                extends_list,
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-        extends_list_result
-    }
-
     /// 获取目标路径
     fn get_target_path(uri: &Url, root_uri: &Url, target_root_uri: &Url) -> PathBuf {
         let src_path = uri.to_file_path().unwrap();
@@ -331,22 +343,6 @@ impl Renderer {
             }
         }
         target_path
-    }
-}
-
-/// file change
-impl Renderer {
-    pub fn did_change(
-        &mut self,
-        uri: &Url,
-        params: &DidChangeTextDocumentParams,
-        document: &FullTextDocument,
-    ) -> DidChangeTextDocumentParams {
-        todo!()
-    }
-
-    pub async fn shutdown(&self) {
-        todo!()
     }
 }
 
@@ -537,6 +533,21 @@ impl Renderer {
             .unwrap()
             .extension()
             .is_some_and(|v| v == "vue")
+    }
+
+    /// uri 是否有效
+    /// * 是文件
+    /// * 存在于文件系统中
+    /// * 不在 node_modules 中
+    pub fn is_uri_valid(uri: &Url) -> bool {
+        let file_path = uri.to_file_path();
+        if let Ok(file_path) = file_path {
+            file_path.exists()
+                && file_path.is_file()
+                && !file_path.to_string_lossy().contains("/node_modules/")
+        } else {
+            false
+        }
     }
 
     pub fn is_position_valid_by_document(

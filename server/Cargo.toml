@@ -21,3 +21,4 @@ swc_common = { version = "5.0.0", features = ["concurrent"] }
 swc_ecma_ast = { version = "5.0.0", features = ["serde-impl"] }
 swc_atoms = "3.0.0"
 percent-encoding = "2.3.1"
+petgraph = "0.7.1"

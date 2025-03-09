@@ -1,7 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use tower_lsp::lsp_types::Url;
-use tracing::debug;
 
 /// # 解析别名
 /// 从 tsconfig.json 文件内容获取别名信息

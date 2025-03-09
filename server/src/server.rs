@@ -6,7 +6,8 @@ use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::{Error, Result};
 use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams, Hover,
-    HoverParams, InitializeParams, InitializeResult, InitializedParams, ServerInfo,
+    HoverParams, InitializeParams, InitializeResult, InitializedParams, ServerCapabilities,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 use tower_lsp::{Client, LanguageServer};
 use tracing::{error, info, instrument, warn};
@@ -35,8 +36,11 @@ impl VueLspServer {
             is_shared = false;
             Arc::new(Mutex::new(TextDocuments::new()))
         };
-        let ts_server = Arc::new(Mutex::new(TsServer::new(client.clone())));
         let renderer = Arc::new(Mutex::new(Renderer::new()));
+        let ts_server = Arc::new(Mutex::new(TsServer::new(
+            client.clone(),
+            Arc::clone(&renderer),
+        )));
         VueLspServer {
             _client: client,
             is_shared,
@@ -61,7 +65,19 @@ impl LanguageServer for VueLspServer {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         if let Some(root_uri) = &params.root_uri {
             self.renderer.lock().await.init(root_uri).await;
-            self.ts_server.lock().await.initialize(params).await
+            let result = self.ts_server.lock().await.initialize(params).await?;
+            Ok(InitializeResult {
+                server_info: Some(ServerInfo {
+                    name: "vue-property-decorator-extension-server".to_string(),
+                    version: Some("1.0.0".to_string()),
+                }),
+                capabilities: ServerCapabilities {
+                    text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                        TextDocumentSyncKind::INCREMENTAL,
+                    )),
+                    ..Default::default()
+                },
+            })
         } else {
             Ok(InitializeResult {
                 server_info: Some(ServerInfo {
@@ -90,6 +106,11 @@ impl LanguageServer for VueLspServer {
                 &serde_json::to_value(&params).unwrap(),
             );
         }
+        let uri = &params.text_document.uri;
+        let text_documents = self.text_documents.lock().await;
+        let document = text_documents.get_document(uri).unwrap();
+        self.ts_server.lock().await.did_open(uri, document).await;
+
         info!("done");
     }
 

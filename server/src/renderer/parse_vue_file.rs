@@ -1,36 +1,51 @@
+use html_languageservice::parser::html_document::Node;
 use lsp_textdocument::FullTextDocument;
 
 use super::{
-    parse_document::{self, ExtendsComponent},
-    render_tree::{InitRenderCache, VueResolvingCache},
-    template_compile,
+    parse_document::{self},
+    parse_script::{self, ExtendsComponent, RegisterComponent},
+    template_compile::{self, CompileMapping},
 };
 
-/// 初始化时初步解析 vue 文件
-pub fn init_parse_vue_file(
-    document: &FullTextDocument,
-) -> Option<(InitRenderCache, Option<ExtendsComponent>)> {
+/// 解析 vue 组件
+pub fn parse_vue_file(document: &FullTextDocument) -> Option<ParseVueFileResult> {
     // 解析文档
-    let (template, script, _) = parse_document::parse_document(&document);
+    let (template, script, style) = parse_document::parse_document(&document);
 
     let template = template?;
     let script = script?;
     let source = document.get_content(None);
     // 解析脚本
-    let (props, render_insert_offset, extends_component, _) =
-        parse_document::parse_script(&script, source)?;
+    let (props, render_insert_offset, extends_component, registers) = parse_script::parse_script(
+        source,
+        script.start_tag_end.unwrap(),
+        script.end_tag_start.unwrap(),
+    )?;
     // 模版编译
-    let (template_compile_result, _) = template_compile::template_compile(&template, source);
+    let (template_compile_result, mapping) = template_compile::template_compile(&template, source);
 
-    Some((
-        InitRenderCache::VueResolving(VueResolvingCache {
-            script_start_pos: script.start_tag_end.unwrap(),
-            script_end_pos: script.end_tag_start.unwrap(),
-            template_compile_result,
-            props,
-            render_insert_offset,
-            source: source.to_string(),
-        }),
+    Some(ParseVueFileResult {
+        template,
+        script,
+        style,
+        props,
+        render_insert_offset,
+        template_compile_result,
+        mapping,
         extends_component,
-    ))
+        registers,
+    })
+}
+
+pub struct ParseVueFileResult {
+    pub template: Node,
+    pub script: Node,
+    pub style: Vec<Node>,
+    /// 渲染得到的属性
+    pub props: Vec<String>,
+    pub render_insert_offset: usize,
+    pub template_compile_result: String,
+    pub mapping: CompileMapping,
+    pub extends_component: Option<ExtendsComponent>,
+    pub registers: Vec<RegisterComponent>,
 }

@@ -383,6 +383,104 @@ pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> 
     }
 }
 
+pub fn get_local_exports_and_transfers(
+    module: &Module,
+) -> (
+    Vec<Option<String>>,
+    Vec<(Option<String>, Option<String>, String, bool)>,
+) {
+    let mut local_exports = vec![];
+    // Vec<(local, export_name, path, is_star_export)>
+    let mut transfers = vec![];
+    // (export_name, orig_name, path)
+    let mut imports: Vec<(String, Option<String>, String)> = vec![];
+    for body in &module.body {
+        if let ModuleItem::ModuleDecl(module_decl) = body {
+            match module_decl {
+                ModuleDecl::Import(import_decl) => {
+                    for specifier in &import_decl.specifiers {
+                        if let Some(orig_name) = get_orig_name_from_import_specifier(specifier) {
+                            imports.push((
+                                get_local_from_import_specifier(specifier),
+                                orig_name,
+                                import_decl.src.value.to_string(),
+                            ));
+                        }
+                    }
+                }
+                ModuleDecl::ExportDecl(export_decl) => {
+                    let export_ident = get_ident_from_export_decl(export_decl);
+                    if let Some(import) = imports.iter().find(|v| v.0 == export_ident) {
+                        transfers.push((
+                            Some(export_ident),
+                            import.1.clone(),
+                            import.2.clone(),
+                            false,
+                        ));
+                    } else {
+                        local_exports.push(Some(export_ident));
+                    }
+                }
+                ModuleDecl::ExportNamed(named_export) => {
+                    for specifier in &named_export.specifiers {
+                        if let Some(export) = get_export_from_export_specifier(specifier) {
+                            if let Some(orig_name) = get_orig_name_from_export_specifier(specifier)
+                            {
+                                if let Some(src) = &named_export.src {
+                                    transfers.push((
+                                        export,
+                                        orig_name,
+                                        src.value.to_string(),
+                                        false,
+                                    ));
+                                } else {
+                                    // 没有 src 则是从 imports 导出或者本地定义
+                                    if let Some(import) =
+                                        imports.iter().find(|v| Some(v.0.clone()) == orig_name)
+                                    {
+                                        transfers.push((
+                                            export,
+                                            import.1.clone(),
+                                            import.2.clone(),
+                                            false,
+                                        ));
+                                    } else {
+                                        local_exports.push(export);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                ModuleDecl::ExportDefaultDecl(_) => {
+                    local_exports.push(None);
+                }
+                ModuleDecl::ExportDefaultExpr(expr) => {
+                    if let Expr::Ident(indent) = expr.expr.as_ref() {
+                        let ident = indent.sym.to_string();
+                        let import = imports.iter().find(|v| v.0 == ident);
+                        if let Some((_, orig_name, path)) = import {
+                            transfers.push((None, orig_name.clone(), path.clone(), false));
+                        }
+                    }
+                }
+                ModuleDecl::ExportAll(export_all) => {
+                    if let Some(with) = &export_all.with {
+                        // TODO: 其他类型的星导出
+                    } else {
+                        transfers.push((None, None, export_all.src.value.to_string(), true));
+                    }
+                }
+                ModuleDecl::TsImportEquals(_) => {}
+                ModuleDecl::TsExportAssignment(_) => {}
+                ModuleDecl::TsNamespaceExport(_) => {}
+            }
+        }
+    }
+
+    (local_exports, transfers)
+}
+
 /// ts 文件导出解析结果
 #[derive(PartialEq, Debug)]
 pub enum TsFileExportResult {

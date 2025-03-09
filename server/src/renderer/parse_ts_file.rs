@@ -5,10 +5,32 @@ use tracing::error;
 use crate::ast::{self, TsFileExportResult};
 
 use super::{
-    parse_document::ExtendsComponent,
-    render_tree::{InitRenderCache, TsResolvedCache},
+    parse_script::{self, ExtendsComponent, RegisterComponent},
     Renderer,
 };
+
+/// # 解析 ts 文件
+/// 如果 ts 文件默认导出组件，那么进行解析
+/// 如果不存在导入导出组件，那么返回 None
+pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
+    let source = document.get_content(None);
+    let (module, _) = ast::parse_source(source, 0, source.len());
+    if let Err(e) = module {
+        error!("parse_ts_file error: {:?}", e);
+        return None;
+    }
+    let module = module.unwrap();
+    let mut ts_component = None;
+    if let Some((props, _, extends_component, registers)) = parse_script::parse_module(&module) {
+        ts_component = Some((props, extends_component, registers));
+    }
+    let (local_exports, transfers) = ast::get_local_exports_and_transfers(&module);
+    Some(ParseTsFileResult {
+        ts_component,
+        local_exports,
+        transfers,
+    })
+}
 
 /// # 从 ts 文件获取指定导出项
 /// * 如果是从当前文件定义，那么返回 None
@@ -31,42 +53,14 @@ pub async fn parse_ts_file_export(uri: &Url, export_name: &Option<String>) -> Ts
     ast::get_export_from_module(&module.unwrap(), export_name)
 }
 
-/// # 解析 ts 文件
-/// 如果 ts 文件默认导出组件，那么进行解析
-/// 如果不存在导入导出组件，那么返回 None
-pub async fn parse_ts_file(
-    document: &FullTextDocument,
-) -> Option<(InitRenderCache, Option<ExtendsComponent>)> {
-    let source = document.get_content(None);
-    let (module, _) = ast::parse_source(source, 0, source.len());
-    if let Err(e) = module {
-        error!("parse_ts_file error: {:?}", e);
-        return None;
-    }
-    let module = module.unwrap();
-    let class = ast::get_default_class_expr_from_module(&module)?;
-    let mut props = vec![];
-    for member in class
-        .class
-        .body
-        .iter()
-        .filter(|v| ast::filter_all_prop_method(v))
-        .collect::<Vec<_>>()
-    {
-        props.push(ast::get_class_member_name(member));
-    }
-    let mut extends_component = None;
-    let extends_ident = ast::get_extends_component(class);
-    if let Some(extends_ident) = extends_ident {
-        if let Some((orig_name, path)) = ast::get_import_from_module(&module, &extends_ident) {
-            extends_component = Some(ExtendsComponent {
-                name: orig_name,
-                path,
-            });
-        }
-    }
-    Some((
-        InitRenderCache::TsResolved(TsResolvedCache { props }),
-        extends_component,
-    ))
+pub struct ParseTsFileResult {
+    pub ts_component: Option<(
+        Vec<String>,
+        Option<ExtendsComponent>,
+        Vec<RegisterComponent>,
+    )>,
+    /// 从当前文件定义的导出
+    pub local_exports: Vec<Option<String>>,
+    /// 从当前文件引入并导出的所有值 Vec<(local, export_name, path, is_star_export)>
+    pub transfers: Vec<(Option<String>, Option<String>, String, bool)>,
 }

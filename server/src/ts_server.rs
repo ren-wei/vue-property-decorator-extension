@@ -9,7 +9,7 @@ use request::{
     WillRenameFiles,
 };
 use serde_json::{json, Value};
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 use tower_lsp::{jsonrpc, Client};
 use tower_lsp::{
     jsonrpc::Result,
@@ -33,12 +33,11 @@ pub struct TsServer {
     client: Client,
     server: LspServer,
     initialize_params: InitializeParams,
-    renderer: Arc<RwLock<Renderer>>,
+    renderer: Arc<Mutex<Renderer>>,
 }
 
 impl TsServer {
-    pub fn new(client: Client) -> TsServer {
-        let renderer = Arc::new(RwLock::new(Renderer::new()));
+    pub fn new(client: Client, renderer: Arc<Mutex<Renderer>>) -> TsServer {
         let server = TsServer::spawn(client.clone(), Arc::clone(&renderer));
         TsServer {
             client,
@@ -48,7 +47,7 @@ impl TsServer {
         }
     }
 
-    fn spawn(client: Client, renderer: Arc<RwLock<Renderer>>) -> LspServer {
+    fn spawn(client: Client, renderer: Arc<Mutex<Renderer>>) -> LspServer {
         let exe_path = std::env::current_exe().unwrap();
         let mut path = exe_path
             .parent()
@@ -66,16 +65,8 @@ impl TsServer {
         tokio::spawn(async move {
             loop {
                 if let Some(message) = rx.recv().await {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
-                    loop {
-                        interval.tick().await;
-
-                        if let Ok(mut renderer) = renderer.try_write() {
-                            TsServer::process_message(&client, &mut server, message, &mut renderer)
-                                .await;
-                            break;
-                        }
-                    }
+                    let mut renderer = renderer.lock().await;
+                    TsServer::process_message(&client, &mut server, message, &mut renderer).await;
                 } else {
                     break;
                 }
@@ -121,7 +112,7 @@ impl TsServer {
     }
 
     pub async fn did_open(&mut self, uri: &Url, document: &FullTextDocument) {
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             renderer: Some(&renderer),
             ..Default::default()
@@ -162,8 +153,8 @@ impl TsServer {
     ) {
         let uri = &params.text_document.uri.clone();
         if Renderer::is_vue_component(uri) {
-            let mut renderer = self.renderer.write().await;
-            let params = renderer.did_change(uri, &params, document);
+            let mut renderer = self.renderer.lock().await;
+            let params = renderer.update(uri, &params, document);
             let options = &ConvertOptions {
                 renderer: Some(&renderer),
                 ..Default::default()
@@ -172,7 +163,7 @@ impl TsServer {
                 .send_notification::<DidChangeTextDocument>(params.convert_to(options).await)
                 .await;
         } else {
-            let renderer = self.renderer.read().await;
+            let renderer = self.renderer.lock().await;
             let options = &ConvertOptions {
                 renderer: Some(&renderer),
                 ..Default::default()
@@ -195,7 +186,7 @@ impl TsServer {
             //     .await;
             // renderer.did_close(uri, &target_uri).await;
         }
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         self.server
             .send_notification::<DidCloseTextDocument>(
                 params
@@ -212,7 +203,7 @@ impl TsServer {
         &self,
         params: RenameFilesParams,
     ) -> Result<Option<WorkspaceEdit>> {
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             renderer: Some(&renderer),
             ..Default::default()
@@ -226,7 +217,7 @@ impl TsServer {
 
     pub async fn hover(&self, params: TextDocumentPositionParams) -> Result<Option<Hover>> {
         let uri = params.text_document.uri.clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
@@ -245,7 +236,7 @@ impl TsServer {
 
     pub async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = params.text_document_position.text_document.uri.clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
@@ -262,7 +253,7 @@ impl TsServer {
         params: CompletionItem,
         original_uri: Url,
     ) -> Result<CompletionItem> {
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&original_uri),
             renderer: Some(&renderer),
@@ -284,7 +275,7 @@ impl TsServer {
             .text_document
             .uri
             .clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             renderer: Some(&renderer),
             ..Default::default()
@@ -437,7 +428,7 @@ impl TsServer {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         let uri = params.text_document.uri.clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
@@ -454,7 +445,7 @@ impl TsServer {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri.clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
@@ -471,7 +462,7 @@ impl TsServer {
         params: SemanticTokensRangeParams,
     ) -> Result<Option<SemanticTokensRangeResult>> {
         let uri = params.text_document.uri.clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
@@ -488,7 +479,7 @@ impl TsServer {
         params: CodeActionParams,
     ) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri.clone();
-        let renderer = self.renderer.read().await;
+        let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
@@ -604,6 +595,5 @@ impl TsServer {
     pub async fn shutdown(&self) {
         self.server.shutdown().await.unwrap();
         self.server.exit().await;
-        self.renderer.read().await.shutdown().await;
     }
 }
