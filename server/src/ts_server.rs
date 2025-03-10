@@ -119,9 +119,7 @@ impl TsServer {
         };
         let target_uri = uri.clone().convert_to(options).await;
         if Renderer::is_vue_component(uri) {
-            let document = Renderer::get_document_from_file(&uri.clone().convert_to(options).await)
-                .await
-                .unwrap();
+            let document = Renderer::get_document_from_file(&target_uri).await.unwrap();
             self.server
                 .send_notification::<DidOpenTextDocument>(DidOpenTextDocumentParams {
                     text_document: TextDocumentItem {
@@ -151,41 +149,19 @@ impl TsServer {
         params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) {
-        let uri = &params.text_document.uri.clone();
-        if Renderer::is_vue_component(uri) {
-            let mut renderer = self.renderer.lock().await;
-            let params = renderer.update(uri, &params, document);
-            let options = &ConvertOptions {
-                renderer: Some(&renderer),
-                ..Default::default()
-            };
-            self.server
-                .send_notification::<DidChangeTextDocument>(params.convert_to(options).await)
-                .await;
-        } else {
-            let renderer = self.renderer.lock().await;
-            let options = &ConvertOptions {
-                renderer: Some(&renderer),
-                ..Default::default()
-            };
-            self.server
-                .send_notification::<DidChangeTextDocument>(params.convert_to(options).await)
-                .await;
-        }
+        let uri = params.text_document.uri.clone();
+        let mut renderer = self.renderer.lock().await;
+        let params = renderer.update(&uri, params, document).await;
+        let options = &ConvertOptions {
+            renderer: Some(&renderer),
+            ..Default::default()
+        };
+        self.server
+            .send_notification::<DidChangeTextDocument>(params.convert_to(options).await)
+            .await;
     }
 
     pub async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        let uri = &params.text_document.uri.clone();
-        if Renderer::is_vue_component(uri) {
-            // let target_uri = uri
-            //     .clone()
-            //     .convert_to(&ConvertOptions {
-            //         renderer: Some(&renderer),
-            //         ..Default::default()
-            //     })
-            //     .await;
-            // renderer.did_close(uri, &target_uri).await;
-        }
         let renderer = self.renderer.lock().await;
         self.server
             .send_notification::<DidCloseTextDocument>(
@@ -277,8 +253,8 @@ impl TsServer {
             .clone();
         let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
+            uri: Some(&uri),
             renderer: Some(&renderer),
-            ..Default::default()
         };
         let response = self
             .server

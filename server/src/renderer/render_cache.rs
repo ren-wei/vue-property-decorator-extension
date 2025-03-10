@@ -33,6 +33,11 @@ impl RenderCacheGraph {
         self.graph.node_weight(*idx)
     }
 
+    pub fn get_mut(&mut self, uri: &Url) -> Option<&mut RenderCache> {
+        let idx = self.idx_map.get(uri)?;
+        self.graph.node_weight_mut(*idx)
+    }
+
     /// 如果节点不存在，那么直接新增，如果节点存在那么更新缓存
     pub fn add_node(&mut self, uri: &Url, cache: RenderCache) {
         // 检查对应节点是否存在
@@ -66,6 +71,19 @@ impl RenderCacheGraph {
             .push((from.clone(), to.clone(), relation));
     }
 
+    /// 移除节点下游边
+    pub fn remove_outgoing_edge(&mut self, uri: &Url) {
+        let idx = *self.idx_map.get(uri).unwrap();
+        let edges = self
+            .graph
+            .edges_directed(idx, Direction::Outgoing)
+            .map(|v| v.id())
+            .collect::<Vec<_>>();
+        for edge in edges {
+            self.graph.remove_edge(edge);
+        }
+    }
+
     /// 将所有虚拟边加入 graph
     pub fn flush(&mut self) {
         for (from, to, relation) in self.virtual_edges.take() {
@@ -77,24 +95,37 @@ impl RenderCacheGraph {
     pub fn render(&self, root_uri: &Url, target_root_uri: &Url) {
         for node in self.graph.node_indices() {
             let cache = &self.graph[node];
-            if let RenderCache::VueRenderCache(cache) = cache {
-                // 获取继承组件的 props
-                let mut props = RenderCacheGraph::get_extends_props(&self.graph, node);
-                props.append(&mut cache.props.clone());
-                let content = combined_rendered_results::combined_rendered_results(
-                    cache.script.start_tag_end.unwrap(),
-                    cache.script.end_tag_start.unwrap(),
-                    &cache.template_compile_result,
-                    &props,
-                    cache.render_insert_offset,
-                    cache.document.get_content(None),
-                );
+            if let RenderCache::VueRenderCache(_) = cache {
                 let uri = self.get_node_uri(node);
+                let content = self.get_node_render_content(uri).unwrap();
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
                 tokio::spawn(async {
                     fs::write(target_path, content).await.unwrap();
                 });
             }
+        }
+    }
+
+    /// 获取节点渲染内容
+    /// 如果是 vue 节点，那么获取渲染后的内容
+    /// 如果是 ts 节点，那么返回 None
+    pub fn get_node_render_content(&self, uri: &Url) -> Option<String> {
+        let node = *self.idx_map.get(uri).unwrap();
+        let cache = &self.graph[node];
+        if let RenderCache::VueRenderCache(cache) = cache {
+            // 获取继承组件的 props
+            let mut props = RenderCacheGraph::get_extends_props(&self.graph, node);
+            props.append(&mut cache.props.clone());
+            Some(combined_rendered_results::combined_rendered_results(
+                cache.script.start_tag_end.unwrap(),
+                cache.script.end_tag_start.unwrap(),
+                &cache.template_compile_result,
+                &props,
+                cache.render_insert_offset,
+                cache.document.get_content(None),
+            ))
+        } else {
+            None
         }
     }
 
@@ -202,14 +233,16 @@ pub enum RenderCache {
 pub struct VueRenderCache {
     /// 渲染前的文档，与文件系统中相同
     pub document: FullTextDocument,
+    // 解析文档
     pub template: Node,
     pub script: Node,
     pub style: Vec<Node>,
-    /// 渲染得到的属性
-    pub props: Vec<String>,
-    pub render_insert_offset: usize,
+    // 解析模版
     pub template_compile_result: String,
     pub mapping: CompileMapping,
+    /// 解析脚本得到的属性
+    pub props: Vec<String>,
+    pub render_insert_offset: usize,
 }
 
 /// ts 文件的渲染缓存

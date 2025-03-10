@@ -1,6 +1,4 @@
 /// 组合渲染结果
-/// # panic
-/// script.start_tag_end == None || script.end_tag_start == None
 pub fn combined_rendered_results(
     script_start_pos: usize,
     script_end_pos: usize,
@@ -11,7 +9,7 @@ pub fn combined_rendered_results(
 ) -> String {
     let source = get_fill_space_source(source, script_start_pos, script_end_pos);
     format!(
-        "{}protected render(){{let {{{}}} = this;const $event:any;{}{}",
+        "{}protected render(){{let {{{}}} = this;const $event:any;\n{}{}",
         &source[..render_insert_offset],
         props.join(","),
         template_compile_result,

@@ -236,54 +236,22 @@ mod tests {
 
     #[test]
     fn empty_props() {
-        assert_render(
-            "<template></template>",
-            "protected render(){let {} = this;const $event:any;}",
-            &[],
-        );
-        assert_render(
-            "<template><div></div></template>",
-            "protected render(){let {} = this;const $event:any;}",
-            &[],
-        );
-        assert_render(
-            "<template><ProjectHeader /></template>",
-            &[
-                "protected render(){", // wrap
-                "let {} = this;",
-                "const $event:any;",
-                "}",
-            ]
-            .join(""),
-            &[],
-        );
+        assert_render("<template></template>", "", &[]);
+        assert_render("<template><div></div></template>", "", &[]);
+        assert_render("<template><ProjectHeader /></template>", "", &[]);
     }
 
     #[test]
     fn with_props() {
         assert_render(
             r#"<template><ProjectHeader title="header" /></template>"#,
-            &[
-                "protected render(){", // wrap
-                "let {} = this;",
-                "const $event:any;",
-                "}",
-            ]
-            .join(""),
+            "",
             &[],
         );
         assert_render(
             r#"<template><ProjectHeader :title="title" :job="job" /></template>"#,
-            &[
-                "protected render(){", // wrap
-                "let {title,job} = this;",
-                "const $event:any;",
-                "(title);",
-                "(job);",
-                "}",
-            ]
-            .join(""),
-            &[(60, 33, 5), (68, 46, 3)],
+            &["(title);", "(job);"].join(""),
+            &[(1, 33, 5), (9, 46, 3)],
         );
     }
 
@@ -291,27 +259,13 @@ mod tests {
     fn directive_if() {
         assert_render(
             r#"<template><ProjectHeader v-if="showHeader" title="header" /><Empty v-else /></template>"#,
-            &[
-                "protected render(){", // wrap
-                "let {showHeader} = this;",
-                "const $event:any;",
-                "if(showHeader){}else{}",
-                "}",
-            ]
-            .join(""),
-            &[(63, 31, 10)],
+            "if(showHeader){}else{}",
+            &[(3, 31, 10)],
         );
         assert_render(
             r#"<template><ProjectHeader v-if="showHeader" title="header" /><Empty v-else-if="showEmpty" /></template>"#,
-            &[
-                "protected render(){", // wrap
-                "let {showHeader} = this;",
-                "const $event:any;",
-                "if(showHeader){}else if(showEmpty){}",
-                "}",
-            ]
-            .join(""),
-            &[(63, 31, 10), (84, 73, 9)],
+            "if(showHeader){}else if(showEmpty){}",
+            &[(3, 31, 10), (24, 73, 9)],
         );
     }
 
@@ -320,19 +274,15 @@ mod tests {
         assert_render(
             r#"<TabPane :key="item.task.id" v-for="item in tabLists" :closable="true" class="content-tab-pane"></TabPane>"#,
             &[
-                "protected render(){",
-                "let {tabLists} = this;",
-                "const $event:any;",
                 "for(const item of tabLists){",
                 "(item.task.id);",
                 "(item);",
                 "(tabLists);",
                 "(true);",
                 "}",
-                "}",
             ]
             .join(""),
-            &[(87, 15, 12), (102, 36, 4), (109, 44, 8), (120, 65, 4)],
+            &[(29, 15, 12), (44, 36, 4), (51, 44, 8), (62, 65, 4)],
         );
     }
 
@@ -341,9 +291,6 @@ mod tests {
         assert_render(
             r#"<div :key="index" v-for="(item, index) in list"></div>"#,
             &[
-                "protected render(){",
-                "let {list} = this;",
-                "const $event:any;",
                 "let index = 0;",
                 "for(const item of list){",
                 "(index);",
@@ -352,10 +299,9 @@ mod tests {
                 "(list);",
                 "index+=1;",
                 "}",
-                "}",
             ]
             .join(""),
-            &[(93, 11, 5), (101, 26, 4), (108, 32, 5), (116, 42, 4)],
+            &[(39, 11, 5), (47, 26, 4), (54, 32, 5), (62, 42, 4)],
         );
     }
 
@@ -363,16 +309,8 @@ mod tests {
     fn single_line_multi_expression() {
         assert_render(
             "<div>{{ one }}{{ two }}</div>",
-            &[
-                "protected render(){",
-                "let {one,two} = this;",
-                "const $event:any;",
-                "( one );",
-                "( two );",
-                "}",
-            ]
-            .join(""),
-            &[(58, 7, 5), (66, 16, 5)],
+            &["( one );", "( two );"].join(""),
+            &[(1, 7, 5), (9, 16, 5)],
         );
     }
 
@@ -380,15 +318,8 @@ mod tests {
     fn directive_slot_default() {
         assert_render(
             r#"<template v-slot="{ item }"></template>"#,
-            &[
-                "protected render(){",
-                "let {} = this;",
-                "const $event:any;",
-                "const { item } = {} as Record<string, any>;",
-                "}",
-            ]
-            .join(""),
-            &[(56, 18, 8)],
+            "{const { item } = {} as Record<string, any>;}",
+            &[(7, 18, 8)],
         );
     }
 
@@ -396,15 +327,8 @@ mod tests {
     fn directive_slot_name() {
         assert_render(
             r#"<template v-slot:name="{ item }"></template>"#,
-            &[
-                "protected render(){",
-                "let {} = this;",
-                "const $event:any;",
-                "const { item } = {} as Record<string, any>;",
-                "}",
-            ]
-            .join(""),
-            &[(56, 23, 8)],
+            "{const { item } = {} as Record<string, any>;}",
+            &[(7, 23, 8)],
         );
     }
 
@@ -412,15 +336,8 @@ mod tests {
     fn directive_slot_scope() {
         assert_render(
             r#"<template slot-scope="record"></template>"#,
-            &[
-                "protected render(){",
-                "let {} = this;",
-                "const $event:any;",
-                "{const {record} = {} as Record<string, any>;}",
-                "}",
-            ]
-            .join(""),
-            &[(58, 22, 6)],
+            "{const {record} = {} as Record<string, any>;}",
+            &[(8, 22, 6)],
         );
     }
 }

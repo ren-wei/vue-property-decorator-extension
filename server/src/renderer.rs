@@ -10,6 +10,7 @@ mod template_compile;
 
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
+use html_languageservice::parser::html_document::Node;
 use lsp_textdocument::FullTextDocument;
 use parse_script::{ExtendsComponent, RegisterComponent};
 use render_cache::{
@@ -20,7 +21,9 @@ use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
 };
-use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Position, Range, Url};
+use tower_lsp::lsp_types::{
+    DidChangeTextDocumentParams, Position, Range, TextDocumentContentChangeEvent, Url,
+};
 use tracing::{error, warn};
 use walkdir::WalkDir;
 
@@ -97,16 +100,232 @@ impl Renderer {
         }
     }
 
-    /// 当文件更改时
-    /// * 重新解析当前组件
-    /// * 更新依赖的组件
-    pub fn update(
+    /// 当文件内容更改时
+    /// * 重新解析当前文件
+    /// * 更新继承关系
+    /// * 更新注册关系
+    /// * 更新继承自当前文件的文件
+    pub async fn update(
         &mut self,
         uri: &Url,
-        params: &DidChangeTextDocumentParams,
+        params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) -> DidChangeTextDocumentParams {
-        todo!()
+        let cache = self.render_cache.get_mut(uri).unwrap();
+        match cache {
+            RenderCache::VueRenderCache(vue_cache) => {
+                // 如果变更超过一个，直接全量更新
+                if params.content_changes.len() != 1 {
+                    self.render_cache.remove_outgoing_edge(uri);
+                    self.create_node(uri).await;
+                    let content = self.render_cache.get_node_render_content(uri).unwrap();
+                    DidChangeTextDocumentParams {
+                        text_document: params.text_document,
+                        content_changes: vec![TextDocumentContentChangeEvent {
+                            range: None,
+                            range_length: None,
+                            text: content,
+                        }],
+                    }
+                } else {
+                    let change = &params.content_changes[0];
+                    let range = change.range.unwrap();
+                    let range_length = change.range_length.unwrap() as usize;
+                    let range_start = vue_cache.document.offset_at(range.start) as usize;
+                    let range_end = vue_cache.document.offset_at(range.end) as usize;
+                    // 更新缓存文档
+                    vue_cache
+                        .document
+                        .update(&[change.clone()], document.version());
+                    let source = document.get_content(None);
+                    // 节点需要增加的偏移量
+                    let incremental = change.text.len() as isize - range_length as isize;
+                    /// 位移节点
+                    fn move_node(node: &mut Node, incremental: isize) {
+                        node.start = (node.start as isize + incremental) as usize;
+                        if let Some(start_tag_end) = node.start_tag_end {
+                            node.start_tag_end =
+                                Some((start_tag_end as isize + incremental) as usize);
+                        }
+                        if let Some(end_tag_start) = node.end_tag_start {
+                            node.end_tag_start =
+                                Some((end_tag_start as isize + incremental) as usize);
+                        }
+                        node.end = (node.end as isize + incremental) as usize;
+                    }
+                    // 1. 如果变更处于 template 节点
+                    if vue_cache.template.start < range_start && range_end < vue_cache.template.end
+                    {
+                        // 重新解析 template 节点
+                        let node = parse_document::parse_as_node(
+                            document,
+                            Some(Range::new(
+                                document.position_at(vue_cache.template.start as u32),
+                                document.position_at(
+                                    (vue_cache.template.end as isize + incremental) as u32,
+                                ),
+                            )),
+                        );
+                        // 位移 script 节点和 style 节点
+                        move_node(&mut vue_cache.script, incremental);
+                        for style in &mut vue_cache.style {
+                            move_node(style, incremental);
+                        }
+
+                        if let Some(node) = node {
+                            vue_cache.template = node;
+                            vue_cache.render_insert_offset =
+                                (vue_cache.render_insert_offset as isize + incremental) as usize;
+                            // 进行模版编译
+                            let (template_compile_result, mapping) =
+                                template_compile::template_compile(&vue_cache.template, source);
+                            vue_cache.template_compile_result = template_compile_result;
+                            vue_cache.mapping = mapping;
+                            // 组合渲染结果
+                            let content = self.render_cache.get_node_render_content(uri).unwrap();
+                            return DidChangeTextDocumentParams {
+                                text_document: params.text_document,
+                                content_changes: vec![TextDocumentContentChangeEvent {
+                                    range: None,
+                                    range_length: None,
+                                    text: content,
+                                }],
+                            };
+                        } else {
+                            vue_cache.template.end += incremental as usize;
+                            // template 节点解析失败，将变更内容转换为空格后输出
+                            return DidChangeTextDocumentParams {
+                                text_document: params.text_document.clone(),
+                                content_changes: vec![TextDocumentContentChangeEvent {
+                                    range: change.range,
+                                    range_length: change.range_length,
+                                    text: " ".repeat(change.text.len()),
+                                }],
+                            };
+                        }
+                    }
+                    // 2. 如果变更处于 script 节点
+                    if vue_cache
+                        .script
+                        .start_tag_end
+                        .is_some_and(|v| v <= range_start)
+                        && vue_cache
+                            .script
+                            .end_tag_start
+                            .is_some_and(|v| range_end < v)
+                    {
+                        vue_cache.script.end_tag_start = Some(
+                            (vue_cache.script.end_tag_start.unwrap() as isize + incremental)
+                                as usize,
+                        );
+                        vue_cache.script.end =
+                            (vue_cache.script.end as isize + incremental) as usize;
+                        for style in &mut vue_cache.style {
+                            move_node(style, incremental);
+                        }
+                        // 尝试`解析脚本`
+                        if let Some((props, render_insert_offset, extends_component, registers)) =
+                            parse_script::parse_script(
+                                source,
+                                vue_cache.script.start_tag_end.unwrap(),
+                                vue_cache.script.end_tag_start.unwrap(),
+                            )
+                        {
+                            vue_cache.render_insert_offset = render_insert_offset;
+                            vue_cache.props = props;
+                            // 处理 extends_component 和 registers
+                            self.render_cache.remove_outgoing_edge(uri);
+                            self.create_extends_relation(uri, extends_component).await;
+                            self.create_registers_relation(uri, registers).await;
+                        } else {
+                            // 解析失败，位移 render_insert_offset
+                            vue_cache.render_insert_offset =
+                                (vue_cache.render_insert_offset as isize + incremental) as usize;
+                        }
+
+                        return params;
+                    }
+
+                    // 3. 如果变更位于 style 节点
+                    let mut is_in_style = false;
+                    for style in &mut vue_cache.style {
+                        if is_in_style {
+                            style.start = (style.start as isize + incremental) as usize;
+                            if let Some(start_tag_end) = style.start_tag_end {
+                                style.start_tag_end =
+                                    Some((start_tag_end as isize + incremental) as usize);
+                            }
+                        }
+                        if !is_in_style
+                            && style.start_tag_end.is_some_and(|v| v <= range_start)
+                            && style.end_tag_start.is_some_and(|v| range_end < v)
+                        {
+                            is_in_style = true;
+                        }
+                        if is_in_style {
+                            if let Some(end_tag_start) = style.end_tag_start {
+                                style.end_tag_start =
+                                    Some((end_tag_start as isize + incremental) as usize);
+                            }
+                            style.end = (style.end as isize + incremental) as usize;
+                        }
+                    }
+                    if is_in_style {
+                        return DidChangeTextDocumentParams {
+                            text_document: params.text_document,
+                            content_changes: vec![TextDocumentContentChangeEvent {
+                                range: change.range,
+                                range_length: change.range_length,
+                                text: " ".repeat(change.text.len()),
+                            }],
+                        };
+                    }
+
+                    // 4. 如果变更处于节点边界，进行全量渲染
+                    self.render_cache.remove_outgoing_edge(uri);
+                    self.create_node(uri).await;
+                    if let Some(content) = self.render_cache.get_node_render_content(uri) {
+                        DidChangeTextDocumentParams {
+                            text_document: params.text_document,
+                            content_changes: vec![TextDocumentContentChangeEvent {
+                                range: None,
+                                range_length: None,
+                                text: content,
+                            }],
+                        }
+                    } else {
+                        DidChangeTextDocumentParams {
+                            text_document: params.text_document.clone(),
+                            content_changes: vec![TextDocumentContentChangeEvent {
+                                range: None,
+                                range_length: None,
+                                text: "".to_string(),
+                            }],
+                        }
+                    }
+                }
+            }
+            RenderCache::TsRenderCache(_) => {
+                self.render_cache.remove_outgoing_edge(uri);
+                self.create_node(uri).await;
+                params
+            }
+            RenderCache::Unknown => {
+                self.create_node(uri).await;
+                if let Some(content) = self.render_cache.get_node_render_content(uri) {
+                    DidChangeTextDocumentParams {
+                        text_document: params.text_document,
+                        content_changes: vec![TextDocumentContentChangeEvent {
+                            range: None,
+                            range_length: None,
+                            text: content,
+                        }],
+                    }
+                } else {
+                    params
+                }
+            }
+        }
     }
 
     /// 从项目目录获取 tsconfig.json 并从中获取别名映射关系
@@ -358,7 +577,8 @@ impl Renderer {
             let document = &cache.document;
             let line = document
                 .position_at(cache.render_insert_offset as u32 + 1)
-                .line;
+                .line
+                + 1;
             if line == position.line {
                 let original = self.get_original_offset(uri, position.character as usize)? as u32;
                 Some(document.position_at(original))
@@ -383,7 +603,8 @@ impl Renderer {
             let character = self.get_mapping_character(uri, offset)? as u32;
             let line = document
                 .position_at(cache.render_insert_offset as u32 + 1)
-                .line;
+                .line
+                + 1;
             Some(Position { line, character })
         } else {
             None
@@ -397,16 +618,6 @@ impl Renderer {
             if cache.mapping.len() == 0 {
                 return None;
             }
-            let render_offset = cache
-                .document
-                .position_at(cache.render_insert_offset as u32 + 1)
-                .character as usize
-                - 1;
-            if offset < render_offset {
-                return None;
-            }
-            // 减去 render 函数插入位置的偏移量
-            let offset = offset - render_offset;
             let mut start = 0;
             let mut end = cache.mapping.len();
             while start < end {
@@ -434,11 +645,6 @@ impl Renderer {
     fn get_mapping_character(&self, uri: &Url, offset: usize) -> Option<usize> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
-            let render_offset = cache
-                .document
-                .position_at(cache.render_insert_offset as u32 + 1)
-                .character as usize
-                - 1;
             if cache.mapping.len() == 0 {
                 return None;
             }
@@ -446,9 +652,7 @@ impl Renderer {
             let mut end = cache.mapping.len();
             while start < end {
                 let mid = (start + end) / 2;
-                let (mut target, source, len) = cache.mapping[mid];
-                // 加上 render 函数插入位置的偏移量
-                target += render_offset;
+                let (target, source, len) = cache.mapping[mid];
                 if source + len < offset {
                     if start == mid {
                         start += 1;

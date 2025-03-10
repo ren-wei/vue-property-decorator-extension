@@ -52,11 +52,21 @@ impl ConvertTo for Range {
 impl ConvertTo for TextDocumentPositionParams {
     /// 必须 root_uri, target_uri
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
+        let uri = options.uri.unwrap();
+        let renderer = options.renderer.unwrap();
+        let mut position = self.position;
+        if let Some(document) = renderer.get_document(uri) {
+            if let Some(pos) =
+                renderer.get_mapping_position(uri, document.offset_at(self.position) as usize)
+            {
+                position = pos;
+            }
+        }
         TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
                 uri: self.text_document.uri.convert_to(options).await,
             },
-            position: self.position,
+            position,
         }
     }
 }

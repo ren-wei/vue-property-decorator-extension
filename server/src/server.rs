@@ -4,18 +4,18 @@ use core::fmt::Debug;
 use lsp_textdocument::TextDocuments;
 use serde_json::Value;
 use tokio::sync::Mutex;
-use tower_lsp::jsonrpc::{Error, Result};
+use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandParams, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult,
-    InitializedParams, SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
-    SemanticTokensResult, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind,
+    InitializedParams, RenameFilesParams, SemanticTokensParams, SemanticTokensRangeParams,
+    SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities, ServerInfo,
+    TextDocumentSyncCapability, TextDocumentSyncKind, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
-use tracing::{error, info, instrument, warn};
+use tracing::{info, instrument};
 
 use crate::renderer::Renderer;
 use crate::ts_server::TsServer;
@@ -135,6 +135,14 @@ impl LanguageServer for VueLspServer {
                 &serde_json::to_value(&params).unwrap(),
             );
         }
+        let uri = &params.text_document.uri.clone();
+        let text_documents = self.text_documents.lock().await;
+        let document = text_documents.get_document(uri).unwrap();
+        self.ts_server
+            .lock()
+            .await
+            .did_change(params, document)
+            .await;
         info!("done");
     }
 
@@ -148,7 +156,15 @@ impl LanguageServer for VueLspServer {
                 &serde_json::to_value(&params).unwrap(),
             );
         }
+        self.ts_server.lock().await.did_close(params).await;
         info!("done");
+    }
+
+    async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
+        info!("will_rename_files start");
+        let response = self.ts_server.lock().await.will_rename_files(params).await;
+        info!("will_rename_files done");
+        response
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
