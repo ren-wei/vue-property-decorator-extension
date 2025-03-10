@@ -328,6 +328,12 @@ impl Renderer {
         }
     }
 
+    pub fn save(&self, uri: &Url) {
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.as_ref().unwrap();
+        self.render_cache
+            .render_node(uri, root_uri, target_root_uri);
+    }
+
     /// 从项目目录获取 tsconfig.json 并从中获取别名映射关系
     async fn init_tsconfig_paths(&mut self, root_uri: &Url) -> Option<()> {
         let root_path = root_uri.to_file_path().unwrap();

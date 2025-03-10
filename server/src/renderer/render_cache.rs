@@ -106,6 +106,20 @@ impl RenderCacheGraph {
         }
     }
 
+    /// 渲染单个节点到文件系统
+    pub fn render_node(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
+        let node = *self.idx_map.get(uri).unwrap();
+        let cache = &self.graph[node];
+        if let RenderCache::VueRenderCache(_) = cache {
+            let uri = self.get_node_uri(node);
+            let content = self.get_node_render_content(uri).unwrap();
+            let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+            tokio::spawn(async {
+                fs::write(target_path, content).await.unwrap();
+            });
+        }
+    }
+
     /// 获取节点渲染内容
     /// 如果是 vue 节点，那么获取渲染后的内容
     /// 如果是 ts 节点，那么返回 None
