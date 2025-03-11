@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use core::fmt::Debug;
+use html_languageservice::{HTMLDataManager, HTMLLanguageService, HTMLLanguageServiceOptions};
 use lsp_textdocument::TextDocuments;
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -10,20 +11,22 @@ use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandParams,
     GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, InitializeParams,
-    InitializeResult, InitializedParams, RenameFilesParams, SemanticTokensParams,
+    InitializeResult, InitializedParams, Position, RenameFilesParams, SemanticTokensParams,
     SemanticTokensRangeParams, SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, WorkspaceEdit,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
-use crate::renderer::Renderer;
+use crate::renderer::{PositionType, Renderer};
 use crate::ts_server::TsServer;
 
 pub struct VueLspServer {
     _client: Client,
     is_shared: bool,
     text_documents: Arc<Mutex<TextDocuments>>,
+    data_manager: Mutex<HTMLDataManager>,
+    html_server: Mutex<HTMLLanguageService>,
     ts_server: Arc<Mutex<TsServer>>,
     renderer: Arc<Mutex<Renderer>>,
 }
@@ -46,13 +49,33 @@ impl VueLspServer {
             client.clone(),
             Arc::clone(&renderer),
         )));
+        let data_manager = Mutex::new(HTMLDataManager::default());
+        let html_server = Mutex::new(HTMLLanguageService::new(
+            &HTMLLanguageServiceOptions::default(),
+        ));
         VueLspServer {
             _client: client,
             is_shared,
             text_documents,
+            data_manager,
+            html_server,
             ts_server,
             renderer,
         }
+    }
+
+    /// 在进行 html 服务器相关的操作前调用
+    async fn update_html_languageservice(&self, uri: &Url) {
+        debug!("(Vue2TsDecoratorServer/update_html_languageservice)");
+        let mut renderer = self.renderer.lock().await;
+        let tags_provider = renderer.get_tags_provider(uri).await;
+
+        let mut data_manager = self.data_manager.lock().await;
+        data_manager.set_data_providers(true, vec![Box::new(tags_provider.clone())]);
+
+        let mut html_server = self.html_server.lock().await;
+        html_server.set_completion_participants(vec![Box::new(tags_provider)]);
+        debug!("(Vue2TsDecoratorServer/update_html_languageservice) done");
     }
 }
 
@@ -164,7 +187,7 @@ impl LanguageServer for VueLspServer {
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         info!("start");
         self.renderer.lock().await.save(&params.text_document.uri);
-        info!("end");
+        info!("done");
     }
 
     async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
@@ -174,12 +197,63 @@ impl LanguageServer for VueLspServer {
         response
     }
 
+    #[instrument]
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        self.ts_server
-            .lock()
-            .await
-            .hover(params.text_document_position_params)
-            .await
+        info!("start");
+        let mut hover = Ok(None);
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = &params.text_document_position_params.position;
+        let typ = {
+            let renderer = self.renderer.lock().await;
+            renderer.get_position_type(uri, position)
+        };
+        if let Some(typ) = typ {
+            match typ {
+                PositionType::Script => {
+                    info!("In script");
+                    hover = self
+                        .ts_server
+                        .lock()
+                        .await
+                        .hover(params.text_document_position_params)
+                        .await;
+                }
+                PositionType::TemplateExpr(pos) => {
+                    info!("In template expr");
+                    let mut params = params.clone();
+                    params.text_document_position_params.position = pos;
+                    hover = self
+                        .ts_server
+                        .lock()
+                        .await
+                        .hover(params.text_document_position_params)
+                        .await;
+                }
+                PositionType::Template => {
+                    info!("In template");
+                    self.update_html_languageservice(uri).await;
+                    let renderer = self.renderer.lock().await;
+                    if let Some(html_document) = renderer.get_html_document(uri) {
+                        let html_server = self.html_server.lock().await;
+                        let data_manager = self.data_manager.lock().await;
+                        let text_documents = self.text_documents.lock().await;
+                        if let Some(text_document) = text_documents.get_document(uri) {
+                            hover = Ok(html_server
+                                .do_hover(
+                                    text_document,
+                                    position,
+                                    &html_document,
+                                    None,
+                                    &data_manager,
+                                )
+                                .await);
+                        }
+                    }
+                }
+            }
+        }
+        info!("done");
+        hover
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {

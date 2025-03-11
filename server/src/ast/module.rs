@@ -16,10 +16,11 @@ use super::{
 };
 
 /// 获取注册的组件映射关系
+/// 返回值: (name, export, prop, path)
 pub fn get_registered_components(
     module: &Module,
     class: &ClassExpr,
-) -> Option<Vec<ModuleReference>> {
+) -> Option<Vec<(String, Option<String>, Option<String>, String)>> {
     // import
     let imports = get_import_expr(&module);
 
@@ -32,13 +33,20 @@ pub fn get_registered_components(
         return None;
     }
     let component_decorator = component_decorator.unwrap();
-    // collect module_references
-    let mut module_references = vec![];
+    // collect registers
+    let mut registers = vec![];
     let args = get_decorator_args(&component_decorator)?;
+    if args.len() == 0 {
+        return None;
+    }
     let arg = &args[0];
     let props = get_object_props(arg.expr.as_ref())?;
     for prop in props {
-        let value = get_value_of_specified_prop(prop, "components")?;
+        let value = get_value_of_specified_prop(prop, "components");
+        if value.is_none() {
+            continue;
+        }
+        let value = value.unwrap();
         let props = get_object_props(value)?;
         for prop in props {
             if let PropOrSpread::Prop(prop) = prop {
@@ -72,16 +80,13 @@ pub fn get_registered_components(
                             continue;
                         }
                     }
-                    module_references.push(ModuleReference {
-                        name,
-                        export,
-                        raw_path: raw_path.to_string(),
-                    });
+                    registers.push((name, export, None, raw_path.to_string()));
                 }
             }
         }
     }
-    Some(module_references)
+
+    Some(registers)
 }
 
 /// 如果导出存在，那么返回 OK；

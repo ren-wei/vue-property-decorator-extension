@@ -10,7 +10,10 @@ mod template_compile;
 
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
-use html_languageservice::parser::html_document::Node;
+use html_languageservice::{
+    html_data::{Description, IAttributeData, ITagData},
+    parser::html_document::{HTMLDocument, Node},
+};
 use lsp_textdocument::FullTextDocument;
 use parse_script::{ExtendsComponent, RegisterComponent};
 use render_cache::{
@@ -22,10 +25,13 @@ use tokio::{
     io::AsyncReadExt,
 };
 use tower_lsp::lsp_types::{
-    DidChangeTextDocumentParams, Position, Range, TextDocumentContentChangeEvent, Url,
+    DidChangeTextDocumentParams, MarkupContent, MarkupKind, Position, Range,
+    TextDocumentContentChangeEvent, Url,
 };
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 use walkdir::WalkDir;
+
+use crate::tags_provider::ArcTagsProvider;
 
 /// # 渲染器
 /// 将项目渲染到同目录下的加上 `.~$` 前缀的目录中
@@ -33,6 +39,7 @@ pub struct Renderer {
     root_uri_target_uri: Option<(Url, Url)>,
     alias: HashMap<String, String>,
     render_cache: RenderCacheGraph,
+    provider_map: HashMap<Url, ArcTagsProvider>,
 }
 
 impl Renderer {
@@ -41,6 +48,7 @@ impl Renderer {
             root_uri_target_uri: None,
             alias: HashMap::new(),
             render_cache: RenderCacheGraph::new(),
+            provider_map: HashMap::new(),
         }
     }
 
@@ -67,7 +75,7 @@ impl Renderer {
     }
 }
 
-/// init
+// render
 impl Renderer {
     /// 创建渲染目录，并进行渲染
     pub async fn init(&mut self, root_uri: &Url) {
@@ -506,13 +514,13 @@ impl Renderer {
         }
     }
 
-    /// 创建注册关系，如果注册节点不存在，那么先创建节点
+    /// 创建注册关系
     async fn create_registers_relation(&mut self, uri: &Url, registers: Vec<RegisterComponent>) {
         for register in registers {
             let register_uri = self.get_uri_from_path(&uri, &register.path);
             if let Some(register_uri) = register_uri {
                 if Renderer::is_uri_valid(&register_uri) {
-                    self.render_cache.add_edge(
+                    self.render_cache.add_virtual_edge(
                         uri,
                         &register_uri,
                         Relationship::RegisterRelationship(RegisterRelationship {
@@ -674,6 +682,101 @@ impl Renderer {
         }
         return None;
     }
+
+    /// 获取 vue 组件所处位置的类型
+    pub fn get_position_type(&self, uri: &Url, position: &Position) -> Option<PositionType> {
+        let cache = &self.render_cache[uri];
+        if let RenderCache::VueRenderCache(cache) = cache {
+            let offset = cache.document.offset_at(*position) as usize;
+            if cache.template.start < offset && offset < cache.template.end {
+                if let Some(pos) = self.get_mapping_position(uri, offset) {
+                    Some(PositionType::TemplateExpr(pos))
+                } else {
+                    Some(PositionType::Template)
+                }
+            } else if cache.script.start_tag_end.unwrap() < offset
+                && offset < cache.script.end_tag_start.unwrap()
+            {
+                Some(PositionType::Script)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+/// tags
+impl Renderer {
+    /// 获取 provider，如果不是最新则先更新
+    pub async fn get_tags_provider(&mut self, uri: &Url) -> ArcTagsProvider {
+        let version = self.get_document_version(uri);
+        if let Some(provider) = self.provider_map.get(uri) {
+            if provider.version() == version {
+                return provider.clone();
+            }
+        }
+        let mut tags = vec![];
+        // 获取当前节点注册的组件
+        let registers = self.render_cache.get_registers(uri);
+        debug!(
+            "register: {:?}",
+            registers.iter().map(|v| v.0.clone()).collect::<Vec<_>>()
+        );
+        for (register_name, cache) in registers {
+            if let RenderCache::VueRenderCache(cache) = cache {
+                tags.push(ITagData {
+                    name: register_name.clone(),
+                    description: Some(Description::MarkupContent(MarkupContent {
+                        kind: MarkupKind::Markdown,
+                        value: format!("```typescript\nclass {}\n```", register_name),
+                    })),
+                    attributes: cache
+                        .props
+                        .iter()
+                        .map(|prop| IAttributeData {
+                            name: prop.clone(),
+                            description: None,
+                            value_set: None,
+                            values: None,
+                            references: None,
+                        })
+                        .collect(),
+                    references: None,
+                    void: None,
+                });
+            }
+        }
+        debug!(
+            "tags: {:?}",
+            tags.iter().map(|v| v.name.clone()).collect::<Vec<_>>()
+        );
+        // TODO: 获取继承节点注册的组件
+        let provider = ArcTagsProvider::new(uri.path().to_string(), tags, version);
+        self.provider_map.insert(uri.clone(), provider.clone());
+        provider
+    }
+
+    pub fn get_document_version(&self, uri: &Url) -> Option<i32> {
+        let cache = &self.render_cache[uri];
+        if let RenderCache::VueRenderCache(cache) = cache {
+            Some(cache.document.version())
+        } else {
+            None
+        }
+    }
+
+    pub fn get_html_document(&self, uri: &Url) -> Option<HTMLDocument> {
+        let cache = &self.render_cache[uri];
+        if let RenderCache::VueRenderCache(cache) = cache {
+            let mut roots = vec![cache.template.clone(), cache.script.clone()];
+            roots.append(&mut cache.style.clone());
+            Some(HTMLDocument { roots })
+        } else {
+            None
+        }
+    }
 }
 
 /// tools
@@ -792,4 +895,11 @@ impl Renderer {
             0
         }
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum PositionType {
+    Script,
+    Template,
+    TemplateExpr(Position),
 }

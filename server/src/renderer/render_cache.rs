@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Index};
 
 use html_languageservice::parser::html_document::Node;
 use lsp_textdocument::FullTextDocument;
@@ -91,6 +91,19 @@ impl RenderCacheGraph {
         }
     }
 
+    /// 根据索引反向查找 uri
+    fn get_node_uri(&self, idx: NodeIndex) -> &Url {
+        for (key, value) in &self.idx_map {
+            if *value == idx {
+                return key;
+            }
+        }
+        panic!("get_node_uri not found");
+    }
+}
+
+/// render
+impl RenderCacheGraph {
     /// 渲染到文件系统
     pub fn render(&self, root_uri: &Url, target_root_uri: &Url) {
         for node in self.graph.node_indices() {
@@ -142,17 +155,10 @@ impl RenderCacheGraph {
             None
         }
     }
+}
 
-    /// 根据索引反向查找 uri
-    fn get_node_uri(&self, idx: NodeIndex) -> &Url {
-        for (key, value) in &self.idx_map {
-            if *value == idx {
-                return key;
-            }
-        }
-        panic!("get_node_uri not found");
-    }
-
+/// extends
+impl RenderCacheGraph {
     /// 获取当前节点的所有继承属性
     fn get_extends_props(graph: &RRGraph, node: NodeIndex) -> Vec<String> {
         let mut extends_props = vec![];
@@ -208,7 +214,10 @@ impl RenderCacheGraph {
         let extends_node = extends_edge.target();
         Some((extends_node, export_name))
     }
+}
 
+/// transfer
+impl RenderCacheGraph {
     /// 从转换关系获取节点
     fn get_transfer_node(
         graph: &RRGraph,
@@ -234,6 +243,35 @@ impl RenderCacheGraph {
     ) -> Option<(NodeIndex, Option<String>)> {
         // TODO: 从星号导出获取节点
         None
+    }
+}
+
+/// register
+impl RenderCacheGraph {
+    /// 获取注册的名称及注册组件的节点数据
+    pub fn get_registers(&self, uri: &Url) -> Vec<(String, &RenderCache)> {
+        let node = self.idx_map[uri];
+        let edges = self
+            .graph
+            .edges_directed(node, Direction::Outgoing)
+            .filter(|edge| edge.weight().is_register());
+        let mut caches = vec![];
+        for edge in edges {
+            let target = edge.target();
+            caches.push((
+                edge.weight().as_register().registered_name.clone(),
+                &self.graph[target],
+            ));
+        }
+        caches
+    }
+}
+
+impl Index<&Url> for RenderCacheGraph {
+    type Output = RenderCache;
+
+    fn index(&self, index: &Url) -> &Self::Output {
+        self.get(index).unwrap()
     }
 }
 
@@ -292,6 +330,22 @@ impl Relationship {
             relation
         } else {
             panic!("Relationship as_extends but it's not ExtendsRelationship");
+        }
+    }
+
+    pub fn is_register(&self) -> bool {
+        if let Relationship::RegisterRelationship(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn as_register(&self) -> &RegisterRelationship {
+        if let Relationship::RegisterRelationship(relation) = self {
+            relation
+        } else {
+            panic!("Relationship as_register but it's not RegisterRelationship");
         }
     }
 }
