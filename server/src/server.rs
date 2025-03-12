@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
 use core::fmt::Debug;
-use html_languageservice::{HTMLDataManager, HTMLLanguageService, HTMLLanguageServiceOptions};
+use html_languageservice::parser::html_document::Node;
+use html_languageservice::parser::html_scanner::TokenType;
+use html_languageservice::{
+    DefaultDocumentContext, HTMLDataManager, HTMLLanguageService, HTMLLanguageServiceOptions,
+};
 use lsp_textdocument::TextDocuments;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
@@ -11,7 +15,7 @@ use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandParams,
     GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, InitializeParams,
-    InitializeResult, InitializedParams, Position, RenameFilesParams, SemanticTokensParams,
+    InitializeResult, InitializedParams, RenameFilesParams, SemanticTokensParams,
     SemanticTokensRangeParams, SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities,
     ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
@@ -257,7 +261,86 @@ impl LanguageServer for VueLspServer {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        self.ts_server.lock().await.completion(params).await
+        info!("completion:start");
+        let uri = &params.text_document_position.text_document.uri;
+        let position = &params.text_document_position.position;
+        let mut completion = Ok(None);
+
+        let typ = {
+            let renderer = self.renderer.lock().await;
+            renderer.get_position_type(uri, position)
+        };
+        if let Some(typ) = typ {
+            /// 添加额外参数
+            fn add_extra_params(list: &mut Vec<CompletionItem>, uri: &Url) {
+                for item in list {
+                    if let Some(data) = &mut item.data {
+                        if data.is_object() {
+                            if let Some(data) = data.as_object_mut() {
+                                data.insert("from_ts_server".to_string(), Value::Bool(true));
+                                data.insert("original_uri".to_string(), json!(uri));
+                            }
+                        }
+                    } else {
+                        item.data = Some(json!({
+                            "from_ts_server": true,
+                            "original_uri": json!(uri)
+                        }));
+                    }
+                }
+            }
+            /// 给每项的 data 中加入标记表示来自 ts 服务器的补全
+            fn completion_add_flag(completion: &mut Result<Option<CompletionResponse>>, uri: &Url) {
+                if let Ok(Some(completion)) = completion {
+                    match completion {
+                        CompletionResponse::Array(list) => {
+                            add_extra_params(list, uri);
+                        }
+                        CompletionResponse::List(list) => {
+                            add_extra_params(&mut list.items, uri);
+                        }
+                    }
+                }
+            }
+            match typ {
+                PositionType::Script => {
+                    let uri = uri.clone();
+                    completion = self.ts_server.lock().await.completion(params).await;
+                    completion_add_flag(&mut completion, &uri);
+                }
+                PositionType::TemplateExpr(pos) => {
+                    let mut params = params.clone();
+                    params.text_document_position.position = pos;
+                    completion = self.ts_server.lock().await.completion(params).await;
+                    completion_add_flag(&mut completion, uri);
+                }
+                PositionType::Template => {
+                    self.update_html_languageservice(uri).await;
+                    let renderer = self.renderer.lock().await;
+                    if let Some(html_document) = renderer.get_html_document(uri) {
+                        let text_documents = self.text_documents.lock().await;
+                        let text_document = text_documents.get_document(uri).unwrap();
+                        let document_context = DefaultDocumentContext {};
+                        let html_server = self.html_server.lock().await;
+                        let data_manager = self.data_manager.lock().await;
+                        let html_result = html_server
+                            .do_complete(
+                                text_document,
+                                position,
+                                &html_document,
+                                document_context,
+                                None,
+                                &data_manager,
+                            )
+                            .await;
+                        completion = Ok(Some(CompletionResponse::List(html_result)));
+                    }
+                }
+            }
+        }
+
+        info!("completion:done");
+        completion
     }
 
     async fn completion_resolve(&self, mut params: CompletionItem) -> Result<CompletionItem> {
@@ -292,20 +375,109 @@ impl LanguageServer for VueLspServer {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        // TODO: is_in_template
-        self.ts_server
-            .lock()
-            .await
-            .goto_definition(params, false)
-            .await
+        info!("goto_definition");
+        let mut definition = Ok(None);
+        let uri = &params.text_document_position_params.text_document.uri;
+        let position = &params.text_document_position_params.position;
+        self.update_html_languageservice(uri).await;
+
+        let typ = {
+            let renderer = self.renderer.lock().await;
+            renderer.get_position_type(uri, position)
+        };
+        if let Some(typ) = typ {
+            match typ {
+                PositionType::Script => {
+                    debug!("Script");
+                    definition = self
+                        .ts_server
+                        .lock()
+                        .await
+                        .goto_definition(params, false)
+                        .await;
+                }
+                PositionType::TemplateExpr(pos) => {
+                    debug!("TemplateExpr");
+                    let mut params = params.clone();
+                    params.text_document_position_params.position = pos;
+                    definition = self
+                        .ts_server
+                        .lock()
+                        .await
+                        .goto_definition(params, true)
+                        .await;
+                }
+                PositionType::Template => {
+                    debug!("Template");
+                    let mut renderer = self.renderer.lock().await;
+                    if let Some(html_document) = renderer.get_html_document(uri) {
+                        let text_documents = self.text_documents.lock().await;
+                        let text_document = text_documents.get_document(uri).unwrap();
+                        let root =
+                            html_document.find_root_at(text_document.offset_at(*position) as usize);
+
+                        if let Some(root) = root {
+                            if root.tag.as_ref().is_some_and(|tag| &tag[..] == "template") {
+                                let offset = text_document.offset_at(*position) as usize;
+                                if let Some(node) = html_document.find_node_at(offset, &mut vec![])
+                                {
+                                    let token_type = Node::find_token_type_in_node(&node, offset);
+                                    if token_type == TokenType::StartTag
+                                        || token_type == TokenType::EndTag
+                                    {
+                                        let tag = node.tag.as_ref().unwrap().clone();
+                                        // if let Some(location) =
+                                        //     renderer.get_component_location(uri, &tag).await
+                                        // {
+                                        //     definition =
+                                        //         Ok(Some(GotoDefinitionResponse::Scalar(location)));
+                                        // }
+                                        // TODO: 获取组件定义的位置
+                                    }
+                                }
+                            } else {
+                                debug!("(Vue2TsDecoratorServer/goto_definition) not in template");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        info!("goto_definition done");
+        definition
     }
 
     async fn document_symbol(
         &self,
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
-        // TODO: script 的 document_symbol 添加到 html 下
-        self.ts_server.lock().await.document_symbol(params).await
+        info!("document_symbol start");
+        let mut document_symbol_list = vec![];
+        let uri = &params.text_document.uri;
+        self.update_html_languageservice(uri).await;
+
+        {
+            let renderer = self.renderer.lock().await;
+            if let Some(html_document) = renderer.get_html_document(uri) {
+                drop(renderer);
+                let text_documents = self.text_documents.lock().await;
+                let text_document = text_documents.get_document(uri).unwrap();
+
+                document_symbol_list =
+                    HTMLLanguageService::find_document_symbols2(text_document, &html_document);
+            }
+        }
+        let script = document_symbol_list.iter_mut().find(|v| v.name == "script");
+        if let Some(script) = script {
+            let ts_server = self.ts_server.lock().await;
+            let response = ts_server.document_symbol(params).await;
+            if let Ok(Some(DocumentSymbolResponse::Nested(response))) = response {
+                script.children = Some(response);
+            }
+        }
+        info!("document_symbol done");
+        Ok(Some(DocumentSymbolResponse::Nested(document_symbol_list)))
     }
 
     async fn semantic_tokens_full(
