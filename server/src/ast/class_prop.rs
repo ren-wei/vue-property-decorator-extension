@@ -23,7 +23,7 @@ pub fn get_class_prop_name(class_prop: &ClassProp) -> String {
         PropName::Str(name) => name.value.to_string(),
         PropName::Num(name) => name.value.to_string(),
         PropName::BigInt(name) => name.value.to_string(),
-        PropName::Computed(_name) => "computed".to_string(),
+        PropName::Computed(_name) => "".to_string(),
     }
 }
 

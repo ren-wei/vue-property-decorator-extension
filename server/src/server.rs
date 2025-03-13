@@ -236,10 +236,13 @@ impl LanguageServer for VueLspServer {
                 PositionType::Template => {
                     info!("In template");
                     self.update_html_languageservice(uri).await;
-                    let renderer = self.renderer.lock().await;
-                    if let Some(html_document) = renderer.get_html_document(uri) {
-                        let html_server = self.html_server.lock().await;
+                    let html_document = {
+                        let renderer = self.renderer.lock().await;
+                        renderer.get_html_document(uri)
+                    };
+                    if let Some(html_document) = html_document {
                         let data_manager = self.data_manager.lock().await;
+                        let html_server = self.html_server.lock().await;
                         let text_documents = self.text_documents.lock().await;
                         if let Some(text_document) = text_documents.get_document(uri) {
                             hover = Ok(html_server
@@ -316,13 +319,16 @@ impl LanguageServer for VueLspServer {
                 }
                 PositionType::Template => {
                     self.update_html_languageservice(uri).await;
-                    let renderer = self.renderer.lock().await;
-                    if let Some(html_document) = renderer.get_html_document(uri) {
+                    let html_document = {
+                        let renderer = self.renderer.lock().await;
+                        renderer.get_html_document(uri)
+                    };
+                    if let Some(html_document) = html_document {
+                        let document_context = DefaultDocumentContext {};
+                        let data_manager = self.data_manager.lock().await;
+                        let html_server = self.html_server.lock().await;
                         let text_documents = self.text_documents.lock().await;
                         let text_document = text_documents.get_document(uri).unwrap();
-                        let document_context = DefaultDocumentContext {};
-                        let html_server = self.html_server.lock().await;
-                        let data_manager = self.data_manager.lock().await;
                         let html_result = html_server
                             .do_complete(
                                 text_document,
@@ -457,16 +463,16 @@ impl LanguageServer for VueLspServer {
         let uri = &params.text_document.uri;
         self.update_html_languageservice(uri).await;
 
-        {
+        let html_document = {
             let renderer = self.renderer.lock().await;
-            if let Some(html_document) = renderer.get_html_document(uri) {
-                drop(renderer);
-                let text_documents = self.text_documents.lock().await;
-                let text_document = text_documents.get_document(uri).unwrap();
+            renderer.get_html_document(uri)
+        };
+        if let Some(html_document) = html_document {
+            let text_documents = self.text_documents.lock().await;
+            let text_document = text_documents.get_document(uri).unwrap();
 
-                document_symbol_list =
-                    HTMLLanguageService::find_document_symbols2(text_document, &html_document);
-            }
+            document_symbol_list =
+                HTMLLanguageService::find_document_symbols2(text_document, &html_document);
         }
         let script = document_symbol_list.iter_mut().find(|v| v.name == "script");
         if let Some(script) = script {

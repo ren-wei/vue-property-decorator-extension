@@ -42,40 +42,54 @@ pub fn parse_alias(tsconfig: &str, root_uri: &Url) -> HashMap<String, String> {
 /// ## 注意
 /// 不判断对应文件是否存在
 /// 不添加后缀
-pub fn parse_import_path(base_uri: &Url, path: &str, alias: &HashMap<String, String>) -> PathBuf {
-    let mut file_path = path.to_string();
+pub fn parse_import_path(
+    base_uri: &Url,
+    path: &str,
+    alias: &HashMap<String, String>,
+    root_uri: &Url,
+) -> PathBuf {
+    if path.starts_with(".") {
+        // 处理相对路径
+        let base_path = base_uri.to_file_path().unwrap();
+        // 获取基础路径的父目录
+        let mut result = match base_path.parent() {
+            Some(parent) => parent.to_path_buf(),
+            None => PathBuf::new(),
+        };
+
+        // 按路径分隔符分割相对路径
+        let file_path = path.to_string();
+        for part in file_path.split("/") {
+            match part {
+                // 如果是 "."，表示当前目录，不做处理，继续下一个部分
+                "." => continue,
+                // 如果是 ".."，表示上级目录，移除结果路径的最后一个组件
+                ".." => {
+                    if !result.pop() {
+                        // 如果结果路径为空，不能再向上级目录移动，直接返回空路径
+                        return PathBuf::new();
+                    }
+                }
+                // 其他情况，将该部分添加到结果路径中
+                _ => result.push(part),
+            }
+        }
+        return result;
+    }
     // 处理别名
+    let mut file_path = path.to_string();
     for (key, value) in alias {
         if path.starts_with(key) {
             file_path = file_path.replace(key, value);
             return PathBuf::from(file_path);
         }
     }
-    // 处理相对路径
-    let base_path = base_uri.to_file_path().unwrap();
-    // 获取基础路径的父目录
-    let mut result = match base_path.parent() {
-        Some(parent) => parent.to_path_buf(),
-        None => PathBuf::new(),
-    };
-
-    // 按路径分隔符分割相对路径
-    for part in file_path.split("/") {
-        match part {
-            // 如果是 "."，表示当前目录，不做处理，继续下一个部分
-            "." => continue,
-            // 如果是 ".."，表示上级目录，移除结果路径的最后一个组件
-            ".." => {
-                if !result.pop() {
-                    // 如果结果路径为空，不能再向上级目录移动，直接返回空路径
-                    return PathBuf::new();
-                }
-            }
-            // 其他情况，将该部分添加到结果路径中
-            _ => result.push(part),
-        }
-    }
-    result
+    // 可能位于 node_modules 中
+    root_uri
+        .to_file_path()
+        .unwrap()
+        .join("node_modules")
+        .join(path)
 }
 
 #[cfg(test)]
@@ -96,10 +110,12 @@ mod tests {
 
     fn assert_parse(path: &str, expected: &str, alias: &[(&str, &str)]) {
         let base_uri = Url::from_file_path("/tmp/project/base.vue").unwrap();
+        let root_uri = Url::from_file_path("/tmp/project").unwrap();
         let result = parse_import_path(
             &base_uri,
             path,
             &HashMap::from_iter(alias.iter().map(|(k, v)| (k.to_string(), v.to_string()))),
+            &root_uri,
         );
         assert_eq!(result, PathBuf::from(expected));
     }
@@ -143,5 +159,10 @@ mod tests {
     fn relative_path() {
         assert_parse("./other.vue", "/tmp/project/other.vue", &[]);
         assert_parse("../../tmq/project/other.vue", "/tmq/project/other.vue", &[]);
+    }
+
+    #[test]
+    fn node_modules() {
+        assert_parse("vue", "/tmp/project/node_modules/vue", &[]);
     }
 }

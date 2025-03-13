@@ -198,6 +198,9 @@ impl RenderCacheGraph {
                         break;
                     }
                 }
+                RenderCache::LibRenderCache(_) => {
+                    next_node = None;
+                }
                 RenderCache::Unknown => {
                     next_node = None;
                 }
@@ -249,7 +252,10 @@ impl RenderCacheGraph {
 /// register
 impl RenderCacheGraph {
     /// 获取注册的名称及注册组件的节点数据
-    pub fn get_registers(&self, uri: &Url) -> Vec<(String, &RenderCache)> {
+    pub fn get_registers(
+        &self,
+        uri: &Url,
+    ) -> Vec<(String, Option<String>, Option<String>, &RenderCache)> {
         let node = self.idx_map[uri];
         let edges = self
             .graph
@@ -258,8 +264,11 @@ impl RenderCacheGraph {
         let mut caches = vec![];
         for edge in edges {
             let target = edge.target();
+            let register = edge.weight().as_register();
             caches.push((
-                edge.weight().as_register().registered_name.clone(),
+                register.registered_name.clone(),
+                register.export_name.clone(),
+                register.prop.clone(),
                 &self.graph[target],
             ));
         }
@@ -278,6 +287,7 @@ impl Index<&Url> for RenderCacheGraph {
 pub enum RenderCache {
     VueRenderCache(VueRenderCache),
     TsRenderCache(TsRenderCache),
+    LibRenderCache(LibRenderCache),
     Unknown,
 }
 
@@ -307,6 +317,24 @@ pub struct TsRenderCache {
 
 pub struct TsComponent {
     pub props: Vec<String>,
+}
+
+pub struct LibRenderCache {
+    pub components: Vec<LibComponent>,
+}
+
+#[derive(Debug)]
+pub struct LibComponent {
+    pub name: String,
+    /// 在组件上挂载的静态属性组件
+    pub static_props: Vec<Box<LibComponent>>,
+    /// 定义的属性，包括继承的属性，不包括方法
+    pub props: Vec<LibComponentProp>,
+}
+
+#[derive(Debug)]
+pub struct LibComponentProp {
+    pub name: String,
 }
 
 #[derive(PartialEq)]

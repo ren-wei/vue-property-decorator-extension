@@ -2,6 +2,7 @@ mod combined_rendered_results;
 pub mod multi_threaded_comment;
 mod parse_document;
 mod parse_import_path;
+mod parse_lib;
 mod parse_script;
 mod parse_ts_file;
 mod parse_vue_file;
@@ -17,8 +18,8 @@ use html_languageservice::{
 use lsp_textdocument::FullTextDocument;
 use parse_script::{ExtendsComponent, RegisterComponent};
 use render_cache::{
-    ExtendsRelationship, RegisterRelationship, Relationship, RenderCache, RenderCacheGraph,
-    TransferRelationship, TsComponent, TsRenderCache, VueRenderCache,
+    ExtendsRelationship, LibRenderCache, RegisterRelationship, Relationship, RenderCache,
+    RenderCacheGraph, TransferRelationship, TsComponent, TsRenderCache, VueRenderCache,
 };
 use tokio::{
     fs::{self, File},
@@ -28,7 +29,7 @@ use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, MarkupContent, MarkupKind, Position, Range,
     TextDocumentContentChangeEvent, Url,
 };
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 use walkdir::WalkDir;
 
 use crate::tags_provider::ArcTagsProvider;
@@ -40,6 +41,8 @@ pub struct Renderer {
     alias: HashMap<String, String>,
     render_cache: RenderCacheGraph,
     provider_map: HashMap<Url, ArcTagsProvider>,
+    /// 组件库列表
+    library_list: Vec<Url>,
 }
 
 impl Renderer {
@@ -49,6 +52,7 @@ impl Renderer {
             alias: HashMap::new(),
             render_cache: RenderCacheGraph::new(),
             provider_map: HashMap::new(),
+            library_list: vec![],
         }
     }
 
@@ -96,9 +100,8 @@ impl Renderer {
         let node_modules_target_path = target_root_path.join("node_modules");
 
         let target_root_uri = Url::from_file_path(target_root_path).unwrap();
+        self.root_uri_target_uri = Some((root_uri.clone(), target_root_uri.clone()));
         self.render(root_uri, &target_root_uri).await;
-
-        self.root_uri_target_uri = Some((root_uri.clone(), target_root_uri));
 
         // 创建 node_modules 的链接
         if node_modules_src_path.exists() {
@@ -318,6 +321,10 @@ impl Renderer {
                 self.create_node(uri).await;
                 params
             }
+            RenderCache::LibRenderCache(_) => {
+                error!("Library node update: {}", uri.path());
+                params
+            }
             RenderCache::Unknown => {
                 self.create_node(uri).await;
                 if let Some(content) = self.render_cache.get_node_render_content(uri) {
@@ -362,6 +369,7 @@ impl Renderer {
     }
 
     /// 读取目录下的文件，并渲染到目标目录
+    /// 同时构建组件间关系图
     async fn render(&mut self, root_uri: &Url, target_root_uri: &Url) {
         let root_path = root_uri.to_file_path().unwrap();
         // 遍历目录
@@ -403,6 +411,11 @@ impl Renderer {
             } else {
                 warn!("walk error: {:?}", entry.unwrap_err());
             }
+        }
+        // 创建组件库节点
+        let library_list = self.library_list.clone();
+        for lib_node in &library_list {
+            self.create_lib_node(lib_node).await;
         }
         self.render_cache.flush();
         self.render_cache.render(root_uri, target_root_uri);
@@ -492,6 +505,15 @@ impl Renderer {
         self.render_cache.add_node(uri, RenderCache::Unknown);
     }
 
+    async fn create_lib_node(&mut self, uri: &Url) {
+        self.render_cache.add_node(
+            uri,
+            RenderCache::LibRenderCache(LibRenderCache {
+                components: parse_lib::parse_specific_lib(uri),
+            }),
+        );
+    }
+
     /// 创建继承关系
     async fn create_extends_relation(
         &mut self,
@@ -509,6 +531,8 @@ impl Renderer {
                             export_name: component.export_name,
                         }),
                     );
+                } else if component.path != "vue" {
+                    warn!("Extends path parse fail: {} {}", component.path, uri.path());
                 }
             }
         }
@@ -519,7 +543,13 @@ impl Renderer {
         for register in registers {
             let register_uri = self.get_uri_from_path(&uri, &register.path);
             if let Some(register_uri) = register_uri {
-                if Renderer::is_uri_valid(&register_uri) {
+                if Renderer::is_uri_valid(&register_uri) || Renderer::is_node_modules(&register_uri)
+                {
+                    if Renderer::is_node_modules(&register_uri)
+                        && !self.library_list.contains(&register_uri)
+                    {
+                        self.library_list.push(register_uri.clone());
+                    }
                     self.render_cache.add_virtual_edge(
                         uri,
                         &register_uri,
@@ -529,6 +559,8 @@ impl Renderer {
                             prop: register.prop,
                         }),
                     );
+                } else {
+                    warn!("Register path parse fail: {}", register.path);
                 }
             }
         }
@@ -536,22 +568,30 @@ impl Renderer {
 
     /// 从导入路径获取 uri，如果对应的文件不存在，返回 None
     fn get_uri_from_path(&self, base_uri: &Url, path: &str) -> Option<Url> {
-        let file_path = parse_import_path::parse_import_path(base_uri, path, &self.alias);
+        let file_path = parse_import_path::parse_import_path(
+            base_uri,
+            path,
+            &self.alias,
+            &self.root_uri_target_uri.as_ref().unwrap().0,
+        );
+        if file_path.is_dir() && file_path.to_string_lossy().contains("/node_modules/") {
+            return Some(Url::from_file_path(file_path).unwrap());
+        }
 
         // 如果文件不存在，那么尝试添加后缀
-        if !file_path.exists() {
+        if !file_path.is_file() {
             if let Some(file_name) = file_path.file_name() {
                 let suffix_list = [".d.ts", ".ts"];
                 for suffix in suffix_list {
                     let new_file_name = format!("{}{}", file_name.to_str().unwrap(), suffix);
                     let new_file_path = file_path.with_file_name(new_file_name);
-                    if new_file_path.exists() {
+                    if new_file_path.is_file() {
                         return Some(Url::from_file_path(new_file_path).unwrap());
                     }
                 }
             }
             let new_file_path = file_path.join("index.ts");
-            if new_file_path.exists() {
+            if new_file_path.is_file() {
                 return Some(Url::from_file_path(new_file_path).unwrap());
             }
             None
@@ -720,38 +760,94 @@ impl Renderer {
         let mut tags = vec![];
         // 获取当前节点注册的组件
         let registers = self.render_cache.get_registers(uri);
-        debug!(
-            "register: {:?}",
-            registers.iter().map(|v| v.0.clone()).collect::<Vec<_>>()
-        );
-        for (register_name, cache) in registers {
-            if let RenderCache::VueRenderCache(cache) = cache {
-                tags.push(ITagData {
-                    name: register_name.clone(),
-                    description: Some(Description::MarkupContent(MarkupContent {
-                        kind: MarkupKind::Markdown,
-                        value: format!("```typescript\nclass {}\n```", register_name),
-                    })),
-                    attributes: cache
-                        .props
-                        .iter()
-                        .map(|prop| IAttributeData {
-                            name: prop.clone(),
-                            description: None,
-                            value_set: None,
-                            values: None,
+        for (register_name, export_name, prop, cache) in registers {
+            match cache {
+                RenderCache::VueRenderCache(cache) => {
+                    tags.push(ITagData {
+                        name: register_name.clone(),
+                        description: Some(Description::MarkupContent(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: format!("```typescript\nclass {}\n```", register_name),
+                        })),
+                        attributes: cache
+                            .props
+                            .iter()
+                            .map(|prop| IAttributeData {
+                                name: prop.clone(),
+                                description: None,
+                                value_set: None,
+                                values: None,
+                                references: None,
+                            })
+                            .collect(),
+                        references: None,
+                        void: None,
+                    });
+                }
+                RenderCache::TsRenderCache(cache) => {
+                    if let Some(ts_component) = &cache.ts_component {
+                        tags.push(ITagData {
+                            name: register_name.clone(),
+                            description: Some(Description::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: format!("```typescript\nclass {}\n```", register_name),
+                            })),
+                            attributes: ts_component
+                                .props
+                                .iter()
+                                .map(|prop| IAttributeData {
+                                    name: prop.clone(),
+                                    description: None,
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                })
+                                .collect(),
                             references: None,
-                        })
-                        .collect(),
-                    references: None,
-                    void: None,
-                });
+                            void: None,
+                        });
+                    }
+                }
+                RenderCache::LibRenderCache(lib_cache) => {
+                    // 从组件库节点获取标签定义
+                    let component = lib_cache
+                        .components
+                        .iter()
+                        .find(|c| export_name.as_ref().is_some_and(|v| *v == c.name));
+                    if let Some(mut component) = component {
+                        if let Some(prop) = prop {
+                            let target = component.static_props.iter().find(|c| c.name == prop);
+                            if let Some(target) = target {
+                                component = target.as_ref();
+                            } else {
+                                continue;
+                            }
+                        }
+                        tags.push(ITagData {
+                            name: register_name.clone(),
+                            description: Some(Description::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: format!("```typescript\nclass {}\n```", register_name),
+                            })),
+                            attributes: component
+                                .props
+                                .iter()
+                                .map(|prop| IAttributeData {
+                                    name: prop.name.clone(),
+                                    description: None,
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                })
+                                .collect(),
+                            references: None,
+                            void: None,
+                        });
+                    }
+                }
+                RenderCache::Unknown => {}
             }
         }
-        debug!(
-            "tags: {:?}",
-            tags.iter().map(|v| v.name.clone()).collect::<Vec<_>>()
-        );
         // TODO: 获取继承节点注册的组件
         let provider = ArcTagsProvider::new(uri.path().to_string(), tags, version);
         self.provider_map.insert(uri.clone(), provider.clone());
@@ -858,6 +954,20 @@ impl Renderer {
             file_path.exists()
                 && file_path.is_file()
                 && !file_path.to_string_lossy().contains("/node_modules/")
+        } else {
+            false
+        }
+    }
+
+    /// uri 是否指向 node_modules 下的库
+    /// * 是目录
+    /// * 存在于文件系统中
+    pub fn is_node_modules(uri: &Url) -> bool {
+        let file_path = uri.to_file_path();
+        if let Ok(file_path) = file_path {
+            file_path.exists()
+                && file_path.is_dir()
+                && file_path.to_string_lossy().contains("/node_modules/")
         } else {
             false
         }
