@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use html_languageservice::html_data::Description;
 use html_languageservice::html_data::{IAttributeData, ITagData, IValueData};
 use html_languageservice::language_facts::data_provider::{
     generate_documentation, GenerateDocumentationItem, GenerateDocumentationSetting,
@@ -13,8 +14,127 @@ use html_languageservice::participant::{
 use regex::Regex;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionTextEdit, Documentation, InsertTextFormat,
-    Position, Range, TextEdit,
+    MarkupContent, MarkupKind, Position, Range, TextEdit, Url,
 };
+
+use super::render_cache::RenderCache;
+use super::Renderer;
+
+impl Renderer {
+    /// 获取 provider，如果不是最新则先更新
+    pub async fn get_tags_provider(&mut self, uri: &Url) -> ArcTagsProvider {
+        let version = self.get_document_version(uri);
+        if let Some(provider) = self.provider_map.get(uri) {
+            if provider.version() == version {
+                return provider.clone();
+            }
+        }
+        let mut tags = vec![];
+        // 获取当前节点注册的组件
+        let registers = self.render_cache.get_registers(uri);
+        for (register_name, export_name, prop, cache) in registers {
+            match cache {
+                RenderCache::VueRenderCache(cache) => {
+                    tags.push(ITagData {
+                        name: register_name.clone(),
+                        description: Some(Description::MarkupContent(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: format!("```typescript\nclass {}\n```", register_name),
+                        })),
+                        attributes: cache
+                            .props
+                            .iter()
+                            .map(|prop| IAttributeData {
+                                name: prop.clone(),
+                                description: None,
+                                value_set: None,
+                                values: None,
+                                references: None,
+                            })
+                            .collect(),
+                        references: None,
+                        void: None,
+                    });
+                }
+                RenderCache::TsRenderCache(cache) => {
+                    if let Some(ts_component) = &cache.ts_component {
+                        tags.push(ITagData {
+                            name: register_name.clone(),
+                            description: Some(Description::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: format!("```typescript\nclass {}\n```", register_name),
+                            })),
+                            attributes: ts_component
+                                .props
+                                .iter()
+                                .map(|prop| IAttributeData {
+                                    name: prop.clone(),
+                                    description: None,
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                })
+                                .collect(),
+                            references: None,
+                            void: None,
+                        });
+                    }
+                }
+                RenderCache::LibRenderCache(lib_cache) => {
+                    // 从组件库节点获取标签定义
+                    let component = lib_cache
+                        .components
+                        .iter()
+                        .find(|c| export_name.as_ref().is_some_and(|v| *v == c.name));
+                    if let Some(mut component) = component {
+                        if let Some(prop) = prop {
+                            let target = component.static_props.iter().find(|c| c.name == prop);
+                            if let Some(target) = target {
+                                component = target.as_ref();
+                            } else {
+                                continue;
+                            }
+                        }
+                        tags.push(ITagData {
+                            name: register_name.clone(),
+                            description: Some(Description::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: format!("```typescript\nclass {}\n```", register_name),
+                            })),
+                            attributes: component
+                                .props
+                                .iter()
+                                .map(|prop| IAttributeData {
+                                    name: prop.name.clone(),
+                                    description: None,
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                })
+                                .collect(),
+                            references: None,
+                            void: None,
+                        });
+                    }
+                }
+                RenderCache::Unknown => {}
+            }
+        }
+        // TODO: 获取继承节点注册的组件
+        let provider = ArcTagsProvider::new(uri.path().to_string(), tags, version);
+        self.provider_map.insert(uri.clone(), provider.clone());
+        provider
+    }
+
+    fn get_document_version(&self, uri: &Url) -> Option<i32> {
+        let cache = &self.render_cache[uri];
+        if let RenderCache::VueRenderCache(cache) = cache {
+            Some(cache.document.version())
+        } else {
+            None
+        }
+    }
+}
 
 pub struct ArcTagsProvider(Arc<TagsProvider>);
 

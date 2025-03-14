@@ -3,7 +3,10 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr};
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::*;
 
-use crate::{lazy::REG_TYPESCRIPT_MODULE, renderer::Renderer};
+use crate::{
+    lazy::REG_TYPESCRIPT_MODULE,
+    renderer::{Mapping, Renderer},
+};
 
 use super::convert_options::ConvertOptions;
 

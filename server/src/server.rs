@@ -22,7 +22,7 @@ use tower_lsp::lsp_types::{
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
 
-use crate::renderer::{PositionType, Renderer};
+use crate::renderer::{Mapping, PositionType, Render, Renderer};
 use crate::ts_server::TsServer;
 
 pub struct VueLspServer {

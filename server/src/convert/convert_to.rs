@@ -2,6 +2,8 @@ use std::{path::PathBuf, str::FromStr};
 
 use tower_lsp::lsp_types::*;
 
+use crate::renderer::Mapping;
+
 use super::convert_options::ConvertOptions;
 
 pub trait ConvertTo {
@@ -34,15 +36,9 @@ impl ConvertTo for Range {
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
         let uri = options.uri.unwrap();
         let renderer = options.renderer.unwrap();
-        if let Some(document) = renderer.get_document(uri) {
-            if let Some(start) =
-                renderer.get_mapping_position(uri, document.offset_at(self.start) as usize)
-            {
-                if let Some(end) =
-                    renderer.get_mapping_position(uri, document.offset_at(self.end) as usize)
-                {
-                    return Range { start, end };
-                }
+        if let Some(start) = renderer.get_mapping_position(uri, &self.start) {
+            if let Some(end) = renderer.get_mapping_position(uri, &self.end) {
+                return Range { start, end };
             }
         }
         self
@@ -55,12 +51,8 @@ impl ConvertTo for TextDocumentPositionParams {
         let uri = options.uri.unwrap();
         let renderer = options.renderer.unwrap();
         let mut position = self.position;
-        if let Some(document) = renderer.get_document(uri) {
-            if let Some(pos) =
-                renderer.get_mapping_position(uri, document.offset_at(self.position) as usize)
-            {
-                position = pos;
-            }
+        if let Some(pos) = renderer.get_mapping_position(uri, &self.position) {
+            position = pos;
         }
         TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {

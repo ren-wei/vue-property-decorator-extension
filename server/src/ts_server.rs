@@ -25,6 +25,7 @@ use tower_lsp::{
 
 use crate::convert::{ConvertBack, ConvertOptions, ConvertTo};
 use crate::renderer::Renderer;
+use crate::renderer::{Mapping, Render};
 
 /// # TsServer
 /// * 将请求转换格式后发送到 tsserver，然后将返回的响应转换为适合的格式
