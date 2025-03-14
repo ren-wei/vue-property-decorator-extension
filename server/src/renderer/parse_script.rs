@@ -4,16 +4,7 @@ use swc_ecma_ast::Module;
 use crate::ast;
 
 /// 解析脚本，输出 props, render_insert_offset, extends_component, registers
-pub fn parse_script(
-    source: &str,
-    start_pos: usize,
-    end_pos: usize,
-) -> Option<(
-    Vec<String>,
-    usize,
-    Option<ExtendsComponent>,
-    Vec<RegisterComponent>,
-)> {
+pub fn parse_script(source: &str, start_pos: usize, end_pos: usize) -> Option<ParseScriptResult> {
     let (module, _) = ast::parse_source(source, start_pos, end_pos);
     if let Ok(module) = &module {
         parse_module(module)
@@ -22,14 +13,7 @@ pub fn parse_script(
     }
 }
 
-pub fn parse_module(
-    module: &Module,
-) -> Option<(
-    Vec<String>,
-    usize,
-    Option<ExtendsComponent>,
-    Vec<RegisterComponent>,
-)> {
+pub fn parse_module(module: &Module) -> Option<ParseScriptResult> {
     let mut extends_component = None;
     if let Some(class) = ast::get_default_class_expr_from_module(module) {
         let mut props = vec![];
@@ -64,7 +48,12 @@ pub fn parse_module(
                 path,
             });
         }
-        Some((props, render_insert_offset, extends_component, registers))
+        Some(ParseScriptResult {
+            props,
+            render_insert_offset,
+            extends_component,
+            registers,
+        })
     } else {
         None
     }
@@ -94,12 +83,19 @@ pub struct RegisterComponent {
     pub path: String,
 }
 
+pub struct ParseScriptResult {
+    pub props: Vec<String>,
+    pub render_insert_offset: usize,
+    pub extends_component: Option<ExtendsComponent>,
+    pub registers: Vec<RegisterComponent>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ExtendsComponent, RegisterComponent};
 
     fn assert_props(source: &str, expected: &[&str]) {
-        let (props, _, _, _) = super::parse_script(source, 0, source.len()).unwrap();
+        let props = super::parse_script(source, 0, source.len()).unwrap().props;
         assert_eq!(
             props,
             expected.iter().map(|v| v.to_string()).collect::<Vec<_>>()
@@ -107,12 +103,16 @@ mod tests {
     }
 
     fn assert_render_insert_offset(source: &str, expected: usize) {
-        let (_, render_insert_offset, _, _) = super::parse_script(source, 0, source.len()).unwrap();
+        let render_insert_offset = super::parse_script(source, 0, source.len())
+            .unwrap()
+            .render_insert_offset;
         assert_eq!(render_insert_offset, expected);
     }
 
     fn assert_extends_component(source: &str, expected: Option<(Option<&str>, &str)>) {
-        let (_, _, extends_component, _) = super::parse_script(source, 0, source.len()).unwrap();
+        let extends_component = super::parse_script(source, 0, source.len())
+            .unwrap()
+            .extends_component;
         assert_eq!(
             extends_component,
             expected.map(|v| ExtendsComponent {
@@ -123,7 +123,9 @@ mod tests {
     }
 
     fn assert_registers(source: &str, expected: &[RegisterComponent]) {
-        let (_, _, _, registers) = super::parse_script(source, 0, source.len()).unwrap();
+        let registers = super::parse_script(source, 0, source.len())
+            .unwrap()
+            .registers;
         assert_eq!(registers, expected.to_vec())
     }
 

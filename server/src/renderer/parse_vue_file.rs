@@ -3,7 +3,7 @@ use lsp_textdocument::FullTextDocument;
 
 use super::{
     parse_document::{self},
-    parse_script::{self, ExtendsComponent, RegisterComponent},
+    parse_script::{self, ExtendsComponent, ParseScriptResult, RegisterComponent},
     template_compile::{self, CompileMapping},
 };
 
@@ -16,7 +16,12 @@ pub fn parse_vue_file(document: &FullTextDocument) -> Option<ParseVueFileResult>
     let script = script?;
     let source = document.get_content(None);
     // 解析脚本
-    let (props, render_insert_offset, extends_component, registers) = parse_script::parse_script(
+    let ParseScriptResult {
+        props,
+        render_insert_offset,
+        extends_component,
+        registers,
+    } = parse_script::parse_script(
         source,
         script.start_tag_end.unwrap(),
         script.end_tag_start.unwrap(),

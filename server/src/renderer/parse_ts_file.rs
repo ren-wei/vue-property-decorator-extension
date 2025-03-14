@@ -5,7 +5,7 @@ use tracing::error;
 use crate::ast::{self, TsFileExportResult};
 
 use super::{
-    parse_script::{self, ExtendsComponent, RegisterComponent},
+    parse_script::{self, ExtendsComponent, ParseScriptResult, RegisterComponent},
     Renderer,
 };
 
@@ -21,7 +21,13 @@ pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
     }
     let module = module.unwrap();
     let mut ts_component = None;
-    if let Some((props, _, extends_component, registers)) = parse_script::parse_module(&module) {
+    if let Some(ParseScriptResult {
+        props,
+        extends_component,
+        registers,
+        render_insert_offset: _,
+    }) = parse_script::parse_module(&module)
+    {
         ts_component = Some((props, extends_component, registers));
     }
     let (local_exports, transfers) = ast::get_local_exports_and_transfers(&module);

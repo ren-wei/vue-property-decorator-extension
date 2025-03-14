@@ -2,7 +2,6 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem, Stmt};
 use tower_lsp::lsp_types::Url;
-use tracing::debug;
 
 use crate::ast;
 

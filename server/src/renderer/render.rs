@@ -12,7 +12,11 @@ use tower_lsp::lsp_types::{
 use tracing::{error, warn};
 use walkdir::WalkDir;
 
-use crate::renderer::{parse_document, parse_script, template_compile};
+use crate::renderer::{
+    parse_document,
+    parse_script::{self, ParseScriptResult},
+    template_compile,
+};
 
 use super::{
     parse_import_path, parse_lib,
@@ -222,13 +226,16 @@ impl Render for Renderer {
                             move_node(style, incremental);
                         }
                         // 尝试`解析脚本`
-                        if let Some((props, render_insert_offset, extends_component, registers)) =
-                            parse_script::parse_script(
-                                source,
-                                vue_cache.script.start_tag_end.unwrap(),
-                                vue_cache.script.end_tag_start.unwrap(),
-                            )
-                        {
+                        if let Some(ParseScriptResult {
+                            props,
+                            render_insert_offset,
+                            extends_component,
+                            registers,
+                        }) = parse_script::parse_script(
+                            source,
+                            vue_cache.script.start_tag_end.unwrap(),
+                            vue_cache.script.end_tag_start.unwrap(),
+                        ) {
                             vue_cache.render_insert_offset = render_insert_offset;
                             vue_cache.props = props;
                             // 处理 extends_component 和 registers
