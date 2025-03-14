@@ -115,6 +115,12 @@ impl RenderCacheGraph {
                 tokio::spawn(async {
                     fs::write(target_path, content).await.unwrap();
                 });
+            } else if let RenderCache::Unknown = cache {
+                let uri = self.get_node_uri(node);
+                let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+                tokio::spawn(async {
+                    fs::write(target_path, "").await.unwrap();
+                });
             }
         }
     }
