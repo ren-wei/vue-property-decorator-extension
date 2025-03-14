@@ -21,6 +21,7 @@ use render_cache::RenderCacheGraph;
 use tags_provider::ArcTagsProvider;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+use tower_lsp::lsp_types::Location;
 
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
@@ -81,6 +82,15 @@ impl Renderer {
         } else {
             None
         }
+    }
+
+    /// 获取标签对应的组件位置
+    pub fn get_component_location(&self, uri: &Url, tag: &str) -> Option<Location> {
+        let registered_uri = self.render_cache.get_register_uri(uri, tag)?;
+        Some(Location {
+            uri: registered_uri.clone(),
+            range: Range::default(),
+        })
     }
 }
 

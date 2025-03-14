@@ -252,6 +252,7 @@ impl RenderCacheGraph {
 /// register
 impl RenderCacheGraph {
     /// 获取注册的名称及注册组件的节点数据
+    /// 返回值：(registered_name, export_name, prop, cache)
     pub fn get_registers(
         &self,
         uri: &Url,
@@ -273,6 +274,17 @@ impl RenderCacheGraph {
             ));
         }
         caches
+    }
+
+    /// 获取注册组件名称对应的 uri
+    pub fn get_register_uri(&self, uri: &Url, registered_name: &str) -> Option<&Url> {
+        let node = self.idx_map[uri];
+        let mut edges = self
+            .graph
+            .edges_directed(node, Direction::Outgoing)
+            .filter(|edge| edge.weight().is_register());
+        let edge = edges.find(|e| e.weight().as_register().registered_name == registered_name)?;
+        Some(self.get_node_uri(edge.target()))
     }
 }
 

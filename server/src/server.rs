@@ -415,7 +415,7 @@ impl LanguageServer for VueLspServer {
                 }
                 PositionType::Template => {
                     debug!("Template");
-                    let mut renderer = self.renderer.lock().await;
+                    let renderer = self.renderer.lock().await;
                     if let Some(html_document) = renderer.get_html_document(uri) {
                         let text_documents = self.text_documents.lock().await;
                         let text_document = text_documents.get_document(uri).unwrap();
@@ -432,13 +432,12 @@ impl LanguageServer for VueLspServer {
                                         || token_type == TokenType::EndTag
                                     {
                                         let tag = node.tag.as_ref().unwrap().clone();
-                                        // if let Some(location) =
-                                        //     renderer.get_component_location(uri, &tag).await
-                                        // {
-                                        //     definition =
-                                        //         Ok(Some(GotoDefinitionResponse::Scalar(location)));
-                                        // }
-                                        // TODO: 获取组件定义的位置
+                                        if let Some(location) =
+                                            renderer.get_component_location(uri, &tag)
+                                        {
+                                            definition =
+                                                Ok(Some(GotoDefinitionResponse::Scalar(location)));
+                                        }
                                     }
                                 }
                             } else {
