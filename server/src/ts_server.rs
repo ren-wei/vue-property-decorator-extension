@@ -50,14 +50,10 @@ impl TsServer {
 
     fn spawn(client: Client, renderer: Arc<Mutex<Renderer>>) -> LspServer {
         let exe_path = std::env::current_exe().unwrap();
-        let mut path = exe_path
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
+        let mut path = exe_path.parent().unwrap().to_path_buf();
+        while !path.file_name().is_some_and(|name| name == "server") {
+            path = path.parent().unwrap().to_path_buf();
+        }
         path.push("tsserver.mjs");
 
         let (mut server, mut rx) = LspServer::new("node", [path.to_str().unwrap(), "--stdio"]);

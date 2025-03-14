@@ -59,6 +59,8 @@ impl Render for Renderer {
 
         // 创建 node_modules 的链接
         if node_modules_src_path.exists() {
+            // TODO: 支持 windows
+            #[cfg(not(target_os = "windows"))]
             fs::symlink(node_modules_src_path, node_modules_target_path)
                 .await
                 .unwrap();
