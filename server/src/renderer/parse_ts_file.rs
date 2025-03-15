@@ -1,5 +1,6 @@
 use lsp_textdocument::FullTextDocument;
-use tower_lsp::lsp_types::Url;
+use swc_common::source_map::SmallPos;
+use tower_lsp::lsp_types::{Range, Url};
 use tracing::error;
 
 use crate::ast::{self, TsFileExportResult};
@@ -22,13 +23,18 @@ pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
     let module = module.unwrap();
     let mut ts_component = None;
     if let Some(ParseScriptResult {
+        name_span,
         props,
         extends_component,
         registers,
         render_insert_offset: _,
     }) = parse_script::parse_module(&module)
     {
-        ts_component = Some((props, extends_component, registers));
+        let name_range = Range::new(
+            document.position_at(name_span.lo.to_u32()),
+            document.position_at(name_span.hi.to_u32()),
+        );
+        ts_component = Some((name_range, props, extends_component, registers));
     }
     let (local_exports, transfers) = ast::get_local_exports_and_transfers(&module);
     Some(ParseTsFileResult {
@@ -61,6 +67,7 @@ pub async fn parse_ts_file_export(uri: &Url, export_name: &Option<String>) -> Ts
 
 pub struct ParseTsFileResult {
     pub ts_component: Option<(
+        Range,
         Vec<String>,
         Option<ExtendsComponent>,
         Vec<RegisterComponent>,

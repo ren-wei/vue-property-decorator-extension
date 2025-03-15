@@ -81,6 +81,11 @@ impl VueLspServer {
         html_server.set_completion_participants(vec![Box::new(tags_provider)]);
         debug!("(Vue2TsDecoratorServer/update_html_languageservice) done");
     }
+
+    /// 是否处理 uri
+    fn is_uri_valid(uri: &Url) -> bool {
+        !uri.path().contains("/node_modules/")
+    }
 }
 
 impl Debug for VueLspServer {
@@ -136,6 +141,9 @@ impl LanguageServer for VueLspServer {
 
     #[instrument]
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return;
+        }
         info!("start");
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
@@ -154,6 +162,9 @@ impl LanguageServer for VueLspServer {
 
     #[instrument]
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return;
+        }
         info!("start");
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
@@ -175,6 +186,9 @@ impl LanguageServer for VueLspServer {
 
     #[instrument]
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return;
+        }
         info!("start");
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
@@ -189,6 +203,9 @@ impl LanguageServer for VueLspServer {
 
     #[instrument]
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return;
+        }
         info!("start");
         self.renderer.lock().await.save(&params.text_document.uri);
         info!("done");
@@ -203,6 +220,9 @@ impl LanguageServer for VueLspServer {
 
     #[instrument]
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        if !VueLspServer::is_uri_valid(&params.text_document_position_params.text_document.uri) {
+            return Ok(None);
+        }
         info!("start");
         let mut hover = Ok(None);
         let uri = &params.text_document_position_params.text_document.uri;
@@ -264,6 +284,9 @@ impl LanguageServer for VueLspServer {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        if !VueLspServer::is_uri_valid(&params.text_document_position.text_document.uri) {
+            return Ok(None);
+        }
         info!("completion:start");
         let uri = &params.text_document_position.text_document.uri;
         let position = &params.text_document_position.position;
@@ -381,6 +404,9 @@ impl LanguageServer for VueLspServer {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
+        if !VueLspServer::is_uri_valid(&params.text_document_position_params.text_document.uri) {
+            return Ok(None);
+        }
         info!("goto_definition");
         let mut definition = Ok(None);
         let uri = &params.text_document_position_params.text_document.uri;
@@ -457,6 +483,9 @@ impl LanguageServer for VueLspServer {
         &self,
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return Ok(None);
+        }
         info!("document_symbol start");
         let mut document_symbol_list = vec![];
         let uri = &params.text_document.uri;
@@ -489,6 +518,9 @@ impl LanguageServer for VueLspServer {
         &self,
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return Ok(None);
+        }
         self.ts_server
             .lock()
             .await
@@ -500,6 +532,9 @@ impl LanguageServer for VueLspServer {
         &self,
         params: SemanticTokensRangeParams,
     ) -> Result<Option<SemanticTokensRangeResult>> {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return Ok(None);
+        }
         self.ts_server
             .lock()
             .await
@@ -508,6 +543,9 @@ impl LanguageServer for VueLspServer {
     }
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+            return Ok(None);
+        }
         self.ts_server.lock().await.code_action(params).await
     }
 

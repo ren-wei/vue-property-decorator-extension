@@ -1,7 +1,9 @@
 use std::{collections::HashMap, fs, path::PathBuf};
 
+use lsp_textdocument::FullTextDocument;
+use swc_common::source_map::SmallPos;
 use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem, Stmt};
-use tower_lsp::lsp_types::Url;
+use tower_lsp::lsp_types::{Location, Range, Url};
 
 use crate::ast;
 
@@ -163,9 +165,18 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                             }
                         }
                     }
+                    let document = FullTextDocument::new("typescript".to_string(), 0, source);
+                    let name_location = Location {
+                        uri: Url::from_file_path(path).unwrap(),
+                        range: Range::new(
+                            document.position_at(class.span.lo.to_u32()),
+                            document.position_at(class.span.hi.to_u32()),
+                        ),
+                    };
                     return Some((
                         LibComponent {
                             name: class_decl.ident.sym.to_string(),
+                            name_location,
                             static_props,
                             props,
                         },

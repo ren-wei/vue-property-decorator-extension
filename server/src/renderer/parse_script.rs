@@ -1,4 +1,4 @@
-use swc_common::source_map::SmallPos;
+use swc_common::{source_map::SmallPos, Span};
 use swc_ecma_ast::Module;
 
 use crate::ast;
@@ -49,6 +49,7 @@ pub fn parse_module(module: &Module) -> Option<ParseScriptResult> {
             });
         }
         Some(ParseScriptResult {
+            name_span: class.class.span,
             props,
             render_insert_offset,
             extends_component,
@@ -84,6 +85,7 @@ pub struct RegisterComponent {
 }
 
 pub struct ParseScriptResult {
+    pub name_span: Span,
     pub props: Vec<String>,
     pub render_insert_offset: usize,
     pub extends_component: Option<ExtendsComponent>,

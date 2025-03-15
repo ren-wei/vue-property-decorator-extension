@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use html_languageservice::parser::html_document::Node;
 use lsp_textdocument::FullTextDocument;
+use swc_common::source_map::SmallPos;
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
@@ -227,6 +228,7 @@ impl Render for Renderer {
                         }
                         // 尝试`解析脚本`
                         if let Some(ParseScriptResult {
+                            name_span,
                             props,
                             render_insert_offset,
                             extends_component,
@@ -237,6 +239,10 @@ impl Render for Renderer {
                             vue_cache.script.end_tag_start.unwrap(),
                         ) {
                             vue_cache.render_insert_offset = render_insert_offset;
+                            vue_cache.name_range = Range {
+                                start: document.position_at(name_span.lo.to_u32()),
+                                end: document.position_at(name_span.hi.to_u32()),
+                            };
                             vue_cache.props = props;
                             // 处理 extends_component 和 registers
                             self.render_cache.remove_outgoing_edge(uri);
@@ -446,6 +452,7 @@ impl Renderer {
                 template: result.template,
                 script: result.script,
                 style: result.style,
+                name_range: result.name_range,
                 props: result.props,
                 render_insert_offset: result.render_insert_offset,
                 template_compile_result: result.template_compile_result,
@@ -466,8 +473,8 @@ impl Renderer {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
         let result = parse_ts_file::parse_ts_file(&document)?;
         let mut ts_component = None;
-        if let Some((props, extends_component, registers)) = result.ts_component {
-            ts_component = Some(TsComponent { props });
+        if let Some((name_range, props, extends_component, registers)) = result.ts_component {
+            ts_component = Some(TsComponent { name_range, props });
             self.create_extends_relation(uri, extends_component).await;
             self.create_registers_relation(uri, registers).await;
         };

@@ -86,10 +86,32 @@ impl Renderer {
 
     /// 获取标签对应的组件位置
     pub fn get_component_location(&self, uri: &Url, tag: &str) -> Option<Location> {
-        let registered_uri = self.render_cache.get_register_uri(uri, tag)?;
+        let (registered_uri, register) = self.render_cache.get_register(uri, tag)?;
+        let node = self.render_cache.get(registered_uri)?;
+        let range = match node {
+            RenderCache::VueRenderCache(cache) => cache.name_range,
+            RenderCache::TsRenderCache(cache) => {
+                if register.export_name.is_none() {
+                    cache.ts_component.as_ref()?.name_range
+                } else {
+                    // TODO: 根据 register.export_name 获取实际组件
+                    Range::default()
+                }
+            }
+            RenderCache::LibRenderCache(cache) => {
+                let component = cache.components.iter().find(|c| {
+                    register
+                        .export_name
+                        .as_ref()
+                        .is_some_and(|name| name == &c.name)
+                })?;
+                return Some(component.name_location.clone());
+            }
+            RenderCache::Unknown => Range::default(),
+        };
         Some(Location {
             uri: registered_uri.clone(),
-            range: Range::default(),
+            range,
         })
     }
 }

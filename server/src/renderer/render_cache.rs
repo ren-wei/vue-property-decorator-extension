@@ -5,7 +5,7 @@ use lsp_textdocument::FullTextDocument;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
 use tokio::fs;
-use tower_lsp::lsp_types::Url;
+use tower_lsp::lsp_types::{Location, Range, Url};
 
 use super::{combined_rendered_results, template_compile::CompileMapping, Renderer};
 
@@ -283,14 +283,21 @@ impl RenderCacheGraph {
     }
 
     /// 获取注册组件名称对应的 uri
-    pub fn get_register_uri(&self, uri: &Url, registered_name: &str) -> Option<&Url> {
+    pub fn get_register(
+        &self,
+        uri: &Url,
+        registered_name: &str,
+    ) -> Option<(&Url, &RegisterRelationship)> {
         let node = self.idx_map[uri];
         let mut edges = self
             .graph
             .edges_directed(node, Direction::Outgoing)
             .filter(|edge| edge.weight().is_register());
         let edge = edges.find(|e| e.weight().as_register().registered_name == registered_name)?;
-        Some(self.get_node_uri(edge.target()))
+        Some((
+            self.get_node_uri(edge.target()),
+            edge.weight().as_register(),
+        ))
     }
 }
 
@@ -318,6 +325,7 @@ pub struct VueRenderCache {
     pub script: Node,
     pub style: Vec<Node>,
     // 解析模版
+    pub name_range: Range,
     pub template_compile_result: String,
     pub mapping: CompileMapping,
     /// 解析脚本得到的属性
@@ -334,6 +342,7 @@ pub struct TsRenderCache {
 }
 
 pub struct TsComponent {
+    pub name_range: Range,
     pub props: Vec<String>,
 }
 
@@ -344,6 +353,7 @@ pub struct LibRenderCache {
 #[derive(Debug)]
 pub struct LibComponent {
     pub name: String,
+    pub name_location: Location,
     /// 在组件上挂载的静态属性组件
     pub static_props: Vec<Box<LibComponent>>,
     /// 定义的属性，包括继承的属性，不包括方法
