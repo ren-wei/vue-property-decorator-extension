@@ -1,3 +1,4 @@
+use html_languageservice::html_data::Description;
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
 use tower_lsp::lsp_types::{Range, Url};
@@ -15,7 +16,7 @@ use super::{
 /// 如果不存在导入导出组件，那么返回 None
 pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
     let source = document.get_content(None);
-    let (module, _) = ast::parse_source(source, 0, source.len());
+    let (module, comments) = ast::parse_source(source, 0, source.len());
     if let Err(e) = module {
         error!("parse_ts_file error: {:?}", e);
         return None;
@@ -24,17 +25,18 @@ pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
     let mut ts_component = None;
     if let Some(ParseScriptResult {
         name_span,
+        description,
         props,
         extends_component,
         registers,
         render_insert_offset: _,
-    }) = parse_script::parse_module(&module)
+    }) = parse_script::parse_module(&module, &comments)
     {
         let name_range = Range::new(
             document.position_at(name_span.lo.to_u32()),
             document.position_at(name_span.hi.to_u32()),
         );
-        ts_component = Some((name_range, props, extends_component, registers));
+        ts_component = Some((name_range, description, props, extends_component, registers));
     }
     let (local_exports, transfers) = ast::get_local_exports_and_transfers(&module);
     Some(ParseTsFileResult {
@@ -68,6 +70,7 @@ pub async fn parse_ts_file_export(uri: &Url, export_name: &Option<String>) -> Ts
 pub struct ParseTsFileResult {
     pub ts_component: Option<(
         Range,
+        Option<Description>,
         Vec<String>,
         Option<ExtendsComponent>,
         Vec<RegisterComponent>,

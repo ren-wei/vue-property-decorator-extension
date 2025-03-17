@@ -134,15 +134,15 @@ pub fn parse_specific_lib(uri: &Url) -> Vec<LibComponent> {
 /// 返回值：（component, extends_component)
 fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)> {
     let source = fs::read_to_string(path).unwrap();
-    let module = ast::parse_source(&source, 0, source.len()).0.unwrap();
-    for item in module.body {
+    let (module, comments) = ast::parse_source(&source, 0, source.len());
+    for item in module.unwrap().body {
         if let ModuleItem::ModuleDecl(module) = item {
             if let ModuleDecl::ExportDecl(decl) = module {
                 if let Decl::Class(class_decl) = decl.decl {
-                    let class = class_decl.class;
+                    let class = &class_decl.class;
                     // 继承组件
                     let mut super_component = None;
-                    if let Some(super_class) = class.super_class {
+                    if let Some(super_class) = &class.super_class {
                         if let Expr::Ident(ident) = super_class.as_ref() {
                             let ident = ident.sym.to_string();
                             if &ident != "Vue" {
@@ -153,7 +153,7 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                     // 获取属性
                     let mut props = vec![];
                     let static_props = vec![];
-                    for member in class.body {
+                    for member in &class.body {
                         if let ClassMember::ClassProp(prop) = member {
                             if prop.is_static {
                                 // TODO: 静态属性
@@ -177,6 +177,7 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                         LibComponent {
                             name: class_decl.ident.sym.to_string(),
                             name_location,
+                            description: ast::get_class_decl_description(&class_decl, &comments),
                             static_props,
                             props,
                         },

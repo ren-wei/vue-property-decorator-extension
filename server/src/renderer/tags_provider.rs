@@ -37,10 +37,7 @@ impl Renderer {
                 RenderCache::VueRenderCache(cache) => {
                     tags.push(ITagData {
                         name: register_name.clone(),
-                        description: Some(Description::MarkupContent(MarkupContent {
-                            kind: MarkupKind::Markdown,
-                            value: format!("```typescript\nclass {}\n```", register_name),
-                        })),
+                        description: cache.description.clone(),
                         attributes: cache
                             .props
                             .iter()
@@ -60,10 +57,7 @@ impl Renderer {
                     if let Some(ts_component) = &cache.ts_component {
                         tags.push(ITagData {
                             name: register_name.clone(),
-                            description: Some(Description::MarkupContent(MarkupContent {
-                                kind: MarkupKind::Markdown,
-                                value: format!("```typescript\nclass {}\n```", register_name),
-                            })),
+                            description: ts_component.description.clone(),
                             attributes: ts_component
                                 .props
                                 .iter()
@@ -97,10 +91,7 @@ impl Renderer {
                         }
                         tags.push(ITagData {
                             name: register_name.clone(),
-                            description: Some(Description::MarkupContent(MarkupContent {
-                                kind: MarkupKind::Markdown,
-                                value: format!("```typescript\nclass {}\n```", register_name),
-                            })),
+                            description: component.description.clone(),
                             attributes: component
                                 .props
                                 .iter()

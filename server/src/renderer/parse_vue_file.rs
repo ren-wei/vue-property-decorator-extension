@@ -1,4 +1,4 @@
-use html_languageservice::parser::html_document::Node;
+use html_languageservice::{html_data::Description, parser::html_document::Node};
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
 use tower_lsp::lsp_types::Range;
@@ -20,6 +20,7 @@ pub fn parse_vue_file(document: &FullTextDocument) -> Option<ParseVueFileResult>
     // 解析脚本
     let ParseScriptResult {
         name_span,
+        description,
         props,
         render_insert_offset,
         extends_component,
@@ -40,6 +41,7 @@ pub fn parse_vue_file(document: &FullTextDocument) -> Option<ParseVueFileResult>
             start: document.position_at(name_span.lo.to_u32()),
             end: document.position_at(name_span.hi.to_u32()),
         },
+        description,
         props,
         render_insert_offset,
         template_compile_result,
@@ -54,6 +56,7 @@ pub struct ParseVueFileResult {
     pub script: Node,
     pub style: Vec<Node>,
     pub name_range: Range,
+    pub description: Option<Description>,
     /// 渲染得到的属性
     pub props: Vec<String>,
     pub render_insert_offset: usize,

@@ -229,6 +229,7 @@ impl Render for Renderer {
                         // 尝试`解析脚本`
                         if let Some(ParseScriptResult {
                             name_span,
+                            description,
                             props,
                             render_insert_offset,
                             extends_component,
@@ -243,6 +244,7 @@ impl Render for Renderer {
                                 start: document.position_at(name_span.lo.to_u32()),
                                 end: document.position_at(name_span.hi.to_u32()),
                             };
+                            vue_cache.description = description;
                             vue_cache.props = props;
                             // 处理 extends_component 和 registers
                             self.render_cache.remove_outgoing_edge(uri);
@@ -453,6 +455,7 @@ impl Renderer {
                 script: result.script,
                 style: result.style,
                 name_range: result.name_range,
+                description: result.description,
                 props: result.props,
                 render_insert_offset: result.render_insert_offset,
                 template_compile_result: result.template_compile_result,
@@ -473,8 +476,14 @@ impl Renderer {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
         let result = parse_ts_file::parse_ts_file(&document)?;
         let mut ts_component = None;
-        if let Some((name_range, props, extends_component, registers)) = result.ts_component {
-            ts_component = Some(TsComponent { name_range, props });
+        if let Some((name_range, description, props, extends_component, registers)) =
+            result.ts_component
+        {
+            ts_component = Some(TsComponent {
+                name_range,
+                description,
+                props,
+            });
             self.create_extends_relation(uri, extends_component).await;
             self.create_registers_relation(uri, registers).await;
         };

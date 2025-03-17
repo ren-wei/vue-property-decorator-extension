@@ -23,7 +23,7 @@ pub fn get_class_decl_name(class: &ClassDecl) -> String {
 
 pub fn get_class_decl_description(
     class: &ClassDecl,
-    comments: &Option<MultiThreadedComments>,
+    comments: &MultiThreadedComments,
 ) -> Option<Description> {
     let comments = comments.get_leading(get_class_decl_pos(class));
     let value = if let Some(comments) = comments {

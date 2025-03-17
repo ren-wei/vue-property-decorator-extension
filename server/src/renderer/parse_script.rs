@@ -1,19 +1,25 @@
+use html_languageservice::html_data::Description;
 use swc_common::{source_map::SmallPos, Span};
 use swc_ecma_ast::Module;
 
 use crate::ast;
 
+use super::multi_threaded_comment::MultiThreadedComments;
+
 /// 解析脚本，输出 props, render_insert_offset, extends_component, registers
 pub fn parse_script(source: &str, start_pos: usize, end_pos: usize) -> Option<ParseScriptResult> {
-    let (module, _) = ast::parse_source(source, start_pos, end_pos);
+    let (module, comments) = ast::parse_source(source, start_pos, end_pos);
     if let Ok(module) = &module {
-        parse_module(module)
+        parse_module(module, &comments)
     } else {
         None
     }
 }
 
-pub fn parse_module(module: &Module) -> Option<ParseScriptResult> {
+pub fn parse_module(
+    module: &Module,
+    comments: &MultiThreadedComments,
+) -> Option<ParseScriptResult> {
     let mut extends_component = None;
     if let Some(class) = ast::get_default_class_expr_from_module(module) {
         let mut props = vec![];
@@ -50,6 +56,7 @@ pub fn parse_module(module: &Module) -> Option<ParseScriptResult> {
         }
         Some(ParseScriptResult {
             name_span: class.class.span,
+            description: ast::get_class_expr_description(class, comments),
             props,
             render_insert_offset,
             extends_component,
@@ -86,6 +93,7 @@ pub struct RegisterComponent {
 
 pub struct ParseScriptResult {
     pub name_span: Span,
+    pub description: Option<Description>,
     pub props: Vec<String>,
     pub render_insert_offset: usize,
     pub extends_component: Option<ExtendsComponent>,

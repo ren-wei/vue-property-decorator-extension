@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Index};
 
-use html_languageservice::parser::html_document::Node;
+use html_languageservice::{html_data::Description, parser::html_document::Node};
 use lsp_textdocument::FullTextDocument;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
@@ -326,6 +326,7 @@ pub struct VueRenderCache {
     pub style: Vec<Node>,
     // 解析模版
     pub name_range: Range,
+    pub description: Option<Description>,
     pub template_compile_result: String,
     pub mapping: CompileMapping,
     /// 解析脚本得到的属性
@@ -343,6 +344,7 @@ pub struct TsRenderCache {
 
 pub struct TsComponent {
     pub name_range: Range,
+    pub description: Option<Description>,
     pub props: Vec<String>,
 }
 
@@ -354,6 +356,7 @@ pub struct LibRenderCache {
 pub struct LibComponent {
     pub name: String,
     pub name_location: Location,
+    pub description: Option<Description>,
     /// 在组件上挂载的静态属性组件
     pub static_props: Vec<Box<LibComponent>>,
     /// 定义的属性，包括继承的属性，不包括方法

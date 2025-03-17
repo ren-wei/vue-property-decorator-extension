@@ -17,12 +17,7 @@ pub fn get_class_expr_pos(class: &ClassExpr) -> BytePos {
     pos
 }
 
-pub fn get_class_expr_name(class: &Option<ClassExpr>) -> String {
-    if class.is_none() {
-        return "unknown".to_string();
-    }
-    let class = class.as_ref().unwrap();
-
+pub fn get_class_expr_name(class: &ClassExpr) -> String {
     if let Some(ident) = &class.ident {
         return ident.sym.to_string();
     }
@@ -30,13 +25,10 @@ pub fn get_class_expr_name(class: &Option<ClassExpr>) -> String {
 }
 
 pub fn get_class_expr_description(
-    class: &Option<ClassExpr>,
-    comments: &Option<MultiThreadedComments>,
+    class: &ClassExpr,
+    comments: &MultiThreadedComments,
 ) -> Option<Description> {
-    if class.is_none() {
-        return None;
-    }
-    let class_expr = class.as_ref().unwrap();
+    let class_expr = class;
 
     let comments = comments.get_leading(get_class_expr_pos(class_expr));
     let value = if let Some(comments) = comments {
