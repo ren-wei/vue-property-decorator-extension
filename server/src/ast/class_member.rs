@@ -2,7 +2,7 @@ use swc_ecma_ast::{ClassMember, ClassProp};
 
 use super::{decorator::is_specified_decorator, prop_name::get_name_form_prop_name};
 
-pub fn filter_specified_prop<'a>(prop: &'a ClassMember, name: &str) -> Option<&'a ClassProp> {
+pub fn _filter_specified_prop<'a>(prop: &'a ClassMember, name: &str) -> Option<&'a ClassProp> {
     if let ClassMember::ClassProp(prop) = prop {
         for decorator in &prop.decorators {
             if is_specified_decorator(decorator, name) {

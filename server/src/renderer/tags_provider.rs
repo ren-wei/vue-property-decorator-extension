@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use html_languageservice::html_data::Description;
 use html_languageservice::html_data::{IAttributeData, ITagData, IValueData};
 use html_languageservice::language_facts::data_provider::{
     generate_documentation, GenerateDocumentationItem, GenerateDocumentationSetting,
@@ -14,7 +13,7 @@ use html_languageservice::participant::{
 use regex::Regex;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionTextEdit, Documentation, InsertTextFormat,
-    MarkupContent, MarkupKind, Position, Range, TextEdit, Url,
+    Position, Range, TextEdit, Url,
 };
 
 use super::render_cache::RenderCache;

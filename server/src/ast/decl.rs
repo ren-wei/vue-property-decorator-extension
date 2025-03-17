@@ -13,7 +13,7 @@ pub fn get_ident_from_decl(decl: &Decl) -> String {
     }
 }
 
-pub fn convert_default_decl_to_decl(default_decl: DefaultDecl) -> Decl {
+pub fn _convert_default_decl_to_decl(default_decl: DefaultDecl) -> Decl {
     match default_decl {
         DefaultDecl::Class(class_expr) => Decl::Class(ClassDecl {
             ident: class_expr.ident.unwrap_or_default(),

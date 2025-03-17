@@ -7,7 +7,7 @@ pub fn get_object_props(expr: &Expr) -> Option<&Vec<PropOrSpread>> {
     None
 }
 
-pub fn expr_is_true(expr: &Expr) -> bool {
+pub fn _expr_is_true(expr: &Expr) -> bool {
     if let Expr::Lit(Lit::Bool(expr)) = expr {
         expr.value
     } else {

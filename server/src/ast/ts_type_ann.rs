@@ -1,6 +1,6 @@
 use swc_ecma_ast::{TsType, TsTypeAnn};
 
-pub fn get_ts_type_string(ts_type: &Option<Box<TsTypeAnn>>) -> String {
+pub fn _get_ts_type_string(ts_type: &Option<Box<TsTypeAnn>>) -> String {
     if let Some(ts_type) = ts_type {
         match ts_type.type_ann.as_ref() {
             TsType::TsKeywordType(ts_type) => {

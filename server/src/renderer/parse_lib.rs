@@ -14,21 +14,21 @@ use super::render_cache::{LibComponent, LibComponentProp};
 /// 如果遇到导入语句，那么先进入导入语句的文件
 /// 将中间结果保存到上下文
 /// 获取继承自 Vue 的组件
-pub async fn parse_lib(uri: &Url) -> Vec<LibComponent> {
+pub async fn _parse_lib(uri: &Url) -> Vec<LibComponent> {
     // 尝试解析 uri 下 types/index.d.ts 文件
     // 如果遇到 export * from './xxx'，那么递归解析
     // 获取继承自 Vue 的组件的 ClassExpr
-    let mut components = vec![];
+    let components = vec![];
     let mut file_path = uri.to_file_path().unwrap();
     file_path.push("types/index.d.ts");
     if file_path.is_file() {
-        let idx_map = parse_file(file_path);
+        let _idx_map = _parse_file(file_path);
     }
     components
 }
 
 /// 递归解析路径指向的文件获取当前文件导出的所有定义
-fn parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
+fn _parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
     // 获取文件内容
     let mut idx_map = HashMap::new();
     let mut local_idx_map = HashMap::new();
@@ -37,7 +37,7 @@ fn parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
     for item in module.body {
         match item {
             ModuleItem::ModuleDecl(module) => match module {
-                ModuleDecl::Import(import_decl) => {
+                ModuleDecl::Import(_import_decl) => {
                     // TODO: 导入声明需要再从对应文件获取导出
                 }
                 ModuleDecl::ExportDecl(export_decl) => {
@@ -46,24 +46,24 @@ fn parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
                         export_decl.decl,
                     );
                 }
-                ModuleDecl::ExportNamed(named_export) => {
+                ModuleDecl::ExportNamed(_named_export) => {
                     // TODO: 如果存在 src ，那么先从对应文件获取导出
                 }
                 ModuleDecl::ExportDefaultDecl(export_default_decl) => {
                     idx_map.insert(
                         None,
-                        ast::convert_default_decl_to_decl(export_default_decl.decl),
+                        ast::_convert_default_decl_to_decl(export_default_decl.decl),
                     );
                 }
-                ModuleDecl::ExportDefaultExpr(export_default_expr) => {
+                ModuleDecl::ExportDefaultExpr(_export_default_expr) => {
                     // TODO: 导出默认表达式，如果是标识符，需要先从本地声明中获取
                 }
-                ModuleDecl::ExportAll(export_all) => {
+                ModuleDecl::ExportAll(_export_all) => {
                     // TODO: 从导入文件获取全部导出
                 }
-                ModuleDecl::TsImportEquals(ts_import_equals_decl) => {}
-                ModuleDecl::TsExportAssignment(ts_export_assignment) => {}
-                ModuleDecl::TsNamespaceExport(ts_namespace_export_decl) => {}
+                ModuleDecl::TsImportEquals(_ts_import_equals_decl) => {}
+                ModuleDecl::TsExportAssignment(_ts_export_assignment) => {}
+                ModuleDecl::TsNamespaceExport(_ts_namespace_export_decl) => {}
             },
             ModuleItem::Stmt(stmt) => {
                 if let Stmt::Decl(decl) = stmt {

@@ -7,7 +7,9 @@ pub fn get_ident_from_export_decl(export_decl: &ExportDecl) -> String {
 }
 
 /// 获取导出的 class 组件
-pub fn get_export_class_component_from_export_decl(export_decl: &ExportDecl) -> Option<&ClassDecl> {
+pub fn _get_export_class_component_from_export_decl(
+    export_decl: &ExportDecl,
+) -> Option<&ClassDecl> {
     if let Decl::Class(class) = &export_decl.decl {
         if class
             .class

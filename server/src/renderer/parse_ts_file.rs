@@ -51,20 +51,20 @@ pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
 /// * 如果是从其他文件导出，那么返回新的 path 和导出名称
 /// * 如果未找到指定的导出，并且存在所有导出，那么返回所有导出的列表
 /// * 如果未找到指定的导出，那么返回 None
-pub async fn parse_ts_file_export(uri: &Url, export_name: &Option<String>) -> TsFileExportResult {
+pub async fn _parse_ts_file_export(uri: &Url, export_name: &Option<String>) -> TsFileExportResult {
     let document = Renderer::get_document_from_file(uri).await;
     if let Err(e) = document {
         error!("parse_ts_file_export error {}: {}", uri.as_str(), e);
-        return TsFileExportResult::None;
+        return TsFileExportResult::_None;
     }
     let document = document.unwrap();
     let source = document.get_content(None);
     let (module, _) = ast::parse_source(source, 0, source.len());
     if let Err(e) = module {
         error!("parse_ts_file_export error {}: {:?}", uri.as_str(), e);
-        return TsFileExportResult::None;
+        return TsFileExportResult::_None;
     }
-    ast::get_export_from_module(&module.unwrap(), export_name)
+    ast::_get_export_from_module(&module.unwrap(), export_name)
 }
 
 pub struct ParseTsFileResult {

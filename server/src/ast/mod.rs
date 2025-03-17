@@ -31,4 +31,3 @@ pub(super) use import_specifier::*;
 pub(super) use module::*;
 pub(super) use prop_or_spread::*;
 pub(super) use string::*;
-pub(super) use ts_type_ann::*;

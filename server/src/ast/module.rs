@@ -4,11 +4,11 @@ use swc_ecma_ast::{
 };
 
 use super::{
+    _get_export_class_component_from_export_decl,
+    _get_export_class_component_from_export_default_decl,
     decorator::{get_decorator_args, is_specified_decorator},
     expr::get_object_props,
-    get_export_class_component_from_export_decl,
-    get_export_class_component_from_export_default_decl, get_export_from_export_specifier,
-    get_ident_from_export_decl, get_local_from_import_specifier,
+    get_export_from_export_specifier, get_ident_from_export_decl, get_local_from_import_specifier,
     get_orig_name_from_export_specifier, get_orig_name_from_import_specifier,
     import::get_specified_import,
     prop_name::get_name_form_prop_name,
@@ -91,11 +91,11 @@ pub fn get_registered_components(
 
 /// 如果导出存在，那么返回 OK；
 /// 如果导出的表达式来自当前模块，那么返回 None；否则，是来自引用，返回引用的导出和真实路径
-pub fn get_registered_component(
+pub fn _get_registered_component(
     name: &str,
     module: &Module,
     export: Option<String>,
-) -> Result<Option<ModuleReference>, String> {
+) -> Result<Option<_ModuleReference>, String> {
     for body in &module.body {
         // 递归导出
         if let ModuleItem::ModuleDecl(module_decl) = body {
@@ -105,7 +105,7 @@ pub fn get_registered_component(
                         match specifier {
                             ExportSpecifier::Default(_) => {
                                 if export.is_none() {
-                                    return Ok(Some(ModuleReference {
+                                    return Ok(Some(_ModuleReference {
                                         name: name.to_string(),
                                         export: None,
                                         raw_path: src.value.to_string(),
@@ -115,14 +115,14 @@ pub fn get_registered_component(
                             ExportSpecifier::Named(specifier) => {
                                 if let Some(export) = export.as_deref() {
                                     let export_name = if let Some(exported) = &specifier.exported {
-                                        get_module_export_name(exported)
+                                        _get_module_export_name(exported)
                                     } else {
-                                        get_module_export_name(&specifier.orig)
+                                        _get_module_export_name(&specifier.orig)
                                     };
                                     if export_name == export {
-                                        return Ok(Some(ModuleReference {
+                                        return Ok(Some(_ModuleReference {
                                             name: name.to_string(),
-                                            export: Some(get_module_export_name(&specifier.orig)),
+                                            export: Some(_get_module_export_name(&specifier.orig)),
                                             raw_path: src.value.to_string(),
                                         }));
                                     }
@@ -130,9 +130,9 @@ pub fn get_registered_component(
                             }
                             ExportSpecifier::Namespace(specifier) => {
                                 if let Some(export) = export.as_deref() {
-                                    let specifier_name = get_module_export_name(&specifier.name);
+                                    let specifier_name = _get_module_export_name(&specifier.name);
                                     if specifier_name == export {
-                                        return Ok(Some(ModuleReference {
+                                        return Ok(Some(_ModuleReference {
                                             name: name.to_string(),
                                             export: Some(specifier_name),
                                             raw_path: src.value.to_string(),
@@ -163,7 +163,7 @@ pub fn get_import_expr(module: &Module) -> Vec<&ImportDecl> {
     imports
 }
 
-pub fn get_export_all(module: &Module) -> Option<&ExportAll> {
+pub fn _get_export_all(module: &Module) -> Option<&ExportAll> {
     for item in &module.body {
         if let ModuleItem::ModuleDecl(decl) = item {
             if let ModuleDecl::ExportAll(export_all) = decl {
@@ -175,7 +175,7 @@ pub fn get_export_all(module: &Module) -> Option<&ExportAll> {
 }
 
 /// 获取所有存在导出的导入项，作为模块引用
-pub fn get_export_module_reference(module: &Module) -> Vec<ModuleReference> {
+pub fn _get_export_module_reference(module: &Module) -> Vec<_ModuleReference> {
     // 1. 先获取所有导入导出项
     // 2. 获取存在导出项的导入项并转换为模块引用
     let module_decls = module
@@ -189,7 +189,7 @@ pub fn get_export_module_reference(module: &Module) -> Vec<ModuleReference> {
         if let ModuleDecl::Import(import) = item {
             for specifier in &import.specifiers {
                 if let ImportSpecifier::Named(named) = specifier {
-                    import_list.push(ModuleReference {
+                    import_list.push(_ModuleReference {
                         name: named.local.sym.to_string(),
                         export: Some(named.local.sym.to_string()),
                         raw_path: import.src.value.to_string(),
@@ -199,7 +199,7 @@ pub fn get_export_module_reference(module: &Module) -> Vec<ModuleReference> {
         } else if let ModuleDecl::ExportNamed(export) = item {
             for specifier in &export.specifiers {
                 if let ExportSpecifier::Named(named) = specifier {
-                    export_list.push(get_module_export_name(&named.orig));
+                    export_list.push(_get_module_export_name(&named.orig));
                 }
             }
         }
@@ -228,7 +228,7 @@ pub fn get_default_class_expr_from_module(module: &Module) -> Option<&ClassExpr>
     None
 }
 
-pub fn get_class_decl_from_module(module: Module, export: &Option<String>) -> Option<ClassDecl> {
+pub fn _get_class_decl_from_module(module: Module, export: &Option<String>) -> Option<ClassDecl> {
     for item in module.body {
         if let ModuleItem::ModuleDecl(item) = item {
             if let ModuleDecl::ExportDecl(item) = item {
@@ -243,7 +243,7 @@ pub fn get_class_decl_from_module(module: Module, export: &Option<String>) -> Op
     None
 }
 
-pub fn get_module_export_name(name: &ModuleExportName) -> String {
+pub fn _get_module_export_name(name: &ModuleExportName) -> String {
     match name {
         ModuleExportName::Ident(name) => name.sym.to_string(),
         ModuleExportName::Str(name) => name.value.to_string(),
@@ -252,7 +252,7 @@ pub fn get_module_export_name(name: &ModuleExportName) -> String {
 
 /// 模块引用
 #[derive(Debug, Clone)]
-pub struct ModuleReference {
+pub struct _ModuleReference {
     /// 实际使用的名称
     pub name: String,
     /// 导出的名
@@ -280,7 +280,10 @@ pub fn get_import_from_module(module: &Module, name: &String) -> Option<(Option<
 }
 
 /// 从 module 获取导出
-pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> TsFileExportResult {
+pub fn _get_export_from_module(
+    module: &Module,
+    export_name: &Option<String>,
+) -> TsFileExportResult {
     // (export_name, orig_name, path)
     let mut imports: Vec<(String, Option<String>, String)> = vec![];
     let mut export_all_list = vec![];
@@ -302,11 +305,11 @@ pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> 
                     if let Some(export_name) = export_name {
                         if export_name == &get_ident_from_export_decl(export_decl) {
                             let class_decl =
-                                get_export_class_component_from_export_decl(export_decl);
+                                _get_export_class_component_from_export_decl(export_decl);
                             if class_decl.is_some() {
-                                return TsFileExportResult::Current;
+                                return TsFileExportResult::_Current;
                             } else {
-                                return TsFileExportResult::None;
+                                return TsFileExportResult::_None;
                             }
                         }
                     }
@@ -320,7 +323,7 @@ pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> 
                                     get_orig_name_from_export_specifier(specifier)
                                 {
                                     if let Some(src) = &named_export.src {
-                                        return TsFileExportResult::Other(
+                                        return TsFileExportResult::_Other(
                                             src.value.to_string(),
                                             orig_name,
                                         );
@@ -334,26 +337,26 @@ pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> 
                                             }
                                         });
                                         if let Some((_, orig_name, path)) = target {
-                                            return TsFileExportResult::Other(
+                                            return TsFileExportResult::_Other(
                                                 path.clone(),
                                                 orig_name.clone(),
                                             );
                                         }
                                     }
                                 }
-                                return TsFileExportResult::None;
+                                return TsFileExportResult::_None;
                             }
                         }
                     }
                 }
                 ModuleDecl::ExportDefaultDecl(export_default_decl) => {
                     if export_name == &None {
-                        if get_export_class_component_from_export_default_decl(export_default_decl)
+                        if _get_export_class_component_from_export_default_decl(export_default_decl)
                             .is_some()
                         {
-                            return TsFileExportResult::Current;
+                            return TsFileExportResult::_Current;
                         } else {
-                            return TsFileExportResult::None;
+                            return TsFileExportResult::_None;
                         }
                     }
                 }
@@ -363,13 +366,13 @@ pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> 
                             let ident = indent.sym.to_string();
                             let target = imports.iter().find(|v| v.0 == ident);
                             if let Some((_, orig_name, path)) = target {
-                                return TsFileExportResult::Other(
+                                return TsFileExportResult::_Other(
                                     path.to_string(),
                                     orig_name.clone(),
                                 );
                             }
                         }
-                        return TsFileExportResult::None;
+                        return TsFileExportResult::_None;
                     }
                 }
                 ModuleDecl::ExportAll(export_all) => {
@@ -382,9 +385,9 @@ pub fn get_export_from_module(module: &Module, export_name: &Option<String>) -> 
         }
     }
     if export_all_list.len() > 0 {
-        TsFileExportResult::Possible(export_all_list)
+        TsFileExportResult::_Possible(export_all_list)
     } else {
-        TsFileExportResult::None
+        TsFileExportResult::_None
     }
 }
 
@@ -470,7 +473,7 @@ pub fn get_local_exports_and_transfers(
                     }
                 }
                 ModuleDecl::ExportAll(export_all) => {
-                    if let Some(with) = &export_all.with {
+                    if let Some(_with) = &export_all.with {
                         // TODO: 其他类型的星导出
                     } else {
                         transfers.push((None, None, export_all.src.value.to_string(), true));
@@ -490,20 +493,20 @@ pub fn get_local_exports_and_transfers(
 #[derive(PartialEq, Debug)]
 pub enum TsFileExportResult {
     /// 定义自当前文件
-    Current,
+    _Current,
     /// 明确从其他文件导入
-    Other(String, Option<String>),
+    _Other(String, Option<String>),
     /// 未找到指定的导出
-    None,
+    _None,
     /// 使用了 `export * from "xxx"` 时可能是来自其他文件的导出
-    Possible(Vec<String>),
+    _Possible(Vec<String>),
 }
 
 #[cfg(test)]
 mod tests {
     use crate::ast;
 
-    use super::{get_export_from_module, TsFileExportResult};
+    use super::{TsFileExportResult, _get_export_from_module};
 
     fn assert_export_result(
         source: &str,
@@ -512,7 +515,7 @@ mod tests {
     ) {
         let (module, _) = ast::parse_source(source, 0, source.len());
         let module = module.unwrap();
-        let result = get_export_from_module(&module, export_name);
+        let result = _get_export_from_module(&module, export_name);
         assert_eq!(result, expected);
     }
 
@@ -526,7 +529,7 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::Current,
+            TsFileExportResult::_Current,
         );
     }
 
@@ -535,7 +538,7 @@ mod tests {
         assert_export_result(
             &["export { MyComponent as default } from 'xxx';"].join("\n"),
             &None,
-            TsFileExportResult::Other("xxx".to_string(), Some("MyComponent".to_string())),
+            TsFileExportResult::_Other("xxx".to_string(), Some("MyComponent".to_string())),
         );
         assert_export_result(
             &[
@@ -544,7 +547,7 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::Other("xxx".to_string(), Some("MyComponent".to_string())),
+            TsFileExportResult::_Other("xxx".to_string(), Some("MyComponent".to_string())),
         );
         assert_export_result(
             &[
@@ -553,7 +556,7 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::Other("xxx".to_string(), None),
+            TsFileExportResult::_Other("xxx".to_string(), None),
         );
         assert_export_result(
             &[
@@ -562,7 +565,7 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::Other("xxx".to_string(), Some("OtherComponent".to_string())),
+            TsFileExportResult::_Other("xxx".to_string(), Some("OtherComponent".to_string())),
         );
     }
 
@@ -571,7 +574,7 @@ mod tests {
         assert_export_result(
             &["export { MyComponent } from 'xxx';"].join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::Other("xxx".to_string(), Some("MyComponent".to_string())),
+            TsFileExportResult::_Other("xxx".to_string(), Some("MyComponent".to_string())),
         );
         assert_export_result(
             &[
@@ -580,7 +583,7 @@ mod tests {
             ]
             .join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::Other("xxx".to_string(), Some("MyComponent".to_string())),
+            TsFileExportResult::_Other("xxx".to_string(), Some("MyComponent".to_string())),
         );
         assert_export_result(
             &[
@@ -590,7 +593,7 @@ mod tests {
             ]
             .join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::Other("xxx".to_string(), Some("OtherComponent".to_string())),
+            TsFileExportResult::_Other("xxx".to_string(), Some("OtherComponent".to_string())),
         );
         assert_export_result(
             &[
@@ -600,7 +603,7 @@ mod tests {
             ]
             .join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::Other("xxx".to_string(), None),
+            TsFileExportResult::_Other("xxx".to_string(), None),
         );
     }
 
@@ -609,7 +612,7 @@ mod tests {
         assert_export_result(
             &["export { MyComponent } from 'xxx';"].join("\n"),
             &None,
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
         assert_export_result(
             &[
@@ -618,7 +621,7 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
         assert_export_result(
             &[
@@ -627,12 +630,12 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
         assert_export_result(
             &["import MyComponent from 'xxx';", "export { MyComponent };"].join("\n"),
             &None,
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
         assert_export_result(
             &[
@@ -641,7 +644,7 @@ mod tests {
             ]
             .join("\n"),
             &Some("OtherComponent".to_string()),
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
         assert_export_result(
             &[
@@ -650,7 +653,7 @@ mod tests {
             ]
             .join("\n"),
             &None,
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
         assert_export_result(
             &[
@@ -659,7 +662,7 @@ mod tests {
             ]
             .join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::None,
+            TsFileExportResult::_None,
         );
     }
 
@@ -668,17 +671,17 @@ mod tests {
         assert_export_result(
             &["export * from 'xxx';"].join("\n"),
             &None,
-            TsFileExportResult::Possible(vec!["xxx".to_string()]),
+            TsFileExportResult::_Possible(vec!["xxx".to_string()]),
         );
         assert_export_result(
             &["export * from 'xxx';"].join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::Possible(vec!["xxx".to_string()]),
+            TsFileExportResult::_Possible(vec!["xxx".to_string()]),
         );
         assert_export_result(
             &["export * from 'aaa';", "export * from 'bbb';"].join("\n"),
             &Some("MyComponent".to_string()),
-            TsFileExportResult::Possible(vec!["aaa".to_string(), "bbb".to_string()]),
+            TsFileExportResult::_Possible(vec!["aaa".to_string(), "bbb".to_string()]),
         );
     }
 }
