@@ -514,8 +514,12 @@ impl ConvertBack for HashMap<Url, Vec<TextEdit>> {
         let mut result = HashMap::new();
         for (url, list) in self {
             result.insert(
-                url.convert_back(options).await,
-                list.convert_back(options).await,
+                url.clone().convert_back(options).await,
+                list.convert_back(&ConvertOptions {
+                    uri: Some(&url),
+                    renderer: options.renderer,
+                })
+                .await,
             );
         }
         result

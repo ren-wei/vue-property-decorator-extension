@@ -252,17 +252,17 @@ impl ConvertTo for RenameFilesParams {
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
         let mut files = vec![];
         for file in self.files {
+            let old_uri = Url::from_str(&file.old_uri)
+                .unwrap()
+                .convert_to(options)
+                .await;
+            let new_uri = Url::from_str(&file.new_uri)
+                .unwrap()
+                .convert_to(options)
+                .await;
             files.push(FileRename {
-                old_uri: Url::from_str(&file.old_uri)
-                    .unwrap()
-                    .convert_to(options)
-                    .await
-                    .to_string(),
-                new_uri: Url::from_str(&file.new_uri)
-                    .unwrap()
-                    .convert_to(options)
-                    .await
-                    .to_string(),
+                old_uri: old_uri.to_string(),
+                new_uri: new_uri.to_string(),
             });
         }
         RenameFilesParams { files }
