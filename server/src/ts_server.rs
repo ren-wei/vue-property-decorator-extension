@@ -116,17 +116,29 @@ impl TsServer {
         };
         let target_uri = uri.clone().convert_to(options).await;
         if Renderer::is_vue_component(uri) {
-            let document = Renderer::get_document_from_file(&target_uri).await.unwrap();
-            self.server
-                .send_notification::<DidOpenTextDocument>(DidOpenTextDocumentParams {
-                    text_document: TextDocumentItem {
-                        uri: target_uri,
-                        language_id: "typescript".to_string(),
-                        version: document.version(),
-                        text: document.get_content(None).to_string(),
-                    },
-                })
-                .await;
+            if let Ok(document) = Renderer::get_document_from_file(&target_uri).await {
+                self.server
+                    .send_notification::<DidOpenTextDocument>(DidOpenTextDocumentParams {
+                        text_document: TextDocumentItem {
+                            uri: target_uri,
+                            language_id: "typescript".to_string(),
+                            version: document.version(),
+                            text: document.get_content(None).to_string(),
+                        },
+                    })
+                    .await;
+            } else {
+                self.server
+                    .send_notification::<DidOpenTextDocument>(DidOpenTextDocumentParams {
+                        text_document: TextDocumentItem {
+                            uri: target_uri,
+                            language_id: "typescript".to_string(),
+                            version: document.version(),
+                            text: document.get_content(None).to_string(),
+                        },
+                    })
+                    .await
+            }
         } else {
             self.server
                 .send_notification::<DidOpenTextDocument>(DidOpenTextDocumentParams {

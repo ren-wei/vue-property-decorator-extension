@@ -12,12 +12,15 @@ use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
-    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandParams,
-    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, InitializeParams,
-    InitializeResult, InitializedParams, RenameFilesParams, SemanticTokensParams,
-    SemanticTokensRangeParams, SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
+    CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbolParams,
+    DocumentSymbolResponse, ExecuteCommandParams, FileOperationFilter, FileOperationPattern,
+    FileOperationRegistrationOptions, GotoDefinitionParams, GotoDefinitionResponse, Hover,
+    HoverParams, InitializeParams, InitializeResult, InitializedParams, RenameFilesParams,
+    SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
+    SemanticTokensResult, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Url, WorkspaceEdit, WorkspaceFileOperationsServerCapabilities,
+    WorkspaceServerCapabilities,
 };
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
@@ -103,6 +106,15 @@ impl LanguageServer for VueLspServer {
         if let Some(root_uri) = &params.root_uri {
             self.renderer.lock().await.init(root_uri).await;
             let result = self.ts_server.lock().await.initialize(params).await?;
+            let file_operation = Some(FileOperationRegistrationOptions {
+                filters: vec![FileOperationFilter {
+                    scheme: Some("file".to_string()),
+                    pattern: FileOperationPattern {
+                        glob: "**".to_string(),
+                        ..Default::default()
+                    },
+                }],
+            });
             Ok(InitializeResult {
                 server_info: Some(ServerInfo {
                     name: "vue-property-decorator-extension-server".to_string(),
@@ -118,6 +130,21 @@ impl LanguageServer for VueLspServer {
                     document_symbol_provider: result.capabilities.document_symbol_provider,
                     semantic_tokens_provider: result.capabilities.semantic_tokens_provider,
                     code_action_provider: result.capabilities.code_action_provider,
+                    workspace: Some(WorkspaceServerCapabilities {
+                        workspace_folders: result
+                            .capabilities
+                            .workspace
+                            .map(|w| w.workspace_folders)
+                            .flatten(),
+                        file_operations: Some(WorkspaceFileOperationsServerCapabilities {
+                            will_create: file_operation.clone(),
+                            did_create: file_operation.clone(),
+                            will_rename: file_operation.clone(),
+                            did_rename: file_operation.clone(),
+                            will_delete: None,
+                            did_delete: file_operation,
+                        }),
+                    }),
                     ..Default::default()
                 },
             })
@@ -152,10 +179,26 @@ impl LanguageServer for VueLspServer {
                 &serde_json::to_value(&params).unwrap(),
             );
         }
-        let uri = &params.text_document.uri;
-        let text_documents = self.text_documents.lock().await;
-        let document = text_documents.get_document(uri).unwrap();
-        self.ts_server.lock().await.did_open(uri, document).await;
+        let uri = params.text_document.uri.clone();
+        let renderer = Arc::clone(&self.renderer);
+        let text_documents = Arc::clone(&self.text_documents);
+        let ts_server = Arc::clone(&self.ts_server);
+        tokio::spawn(async move {
+            loop {
+                let is_wait = {
+                    let renderer = renderer.lock().await;
+                    renderer.is_wait_create(&uri)
+                };
+                if is_wait {
+                    tokio::task::yield_now().await;
+                } else {
+                    break;
+                }
+            }
+            let text_documents = text_documents.lock().await;
+            let document = text_documents.get_document(&uri).unwrap();
+            ts_server.lock().await.did_open(&uri, document).await;
+        });
 
         info!("done");
     }
@@ -211,11 +254,27 @@ impl LanguageServer for VueLspServer {
         info!("done");
     }
 
+    async fn will_create_files(&self, params: CreateFilesParams) -> Result<Option<WorkspaceEdit>> {
+        self.renderer.lock().await.will_create_files(&params);
+        Ok(None)
+    }
+
+    async fn did_create_files(&self, params: CreateFilesParams) {
+        self.renderer.lock().await.did_create_files(params).await;
+    }
+
     async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
-        info!("will_rename_files start");
+        self.renderer.lock().await.will_rename_files(&params);
         let response = self.ts_server.lock().await.will_rename_files(params).await;
-        info!("will_rename_files done");
         response
+    }
+
+    async fn did_rename_files(&self, params: RenameFilesParams) {
+        self.renderer.lock().await.did_rename_files(params).await;
+    }
+
+    async fn did_delete_files(&self, params: DeleteFilesParams) {
+        self.renderer.lock().await.did_delete_files(params).await;
     }
 
     #[instrument]

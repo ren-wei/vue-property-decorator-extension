@@ -23,6 +23,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tower_lsp::lsp_types::Location;
 
+use std::collections::HashSet;
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
 use lsp_textdocument::FullTextDocument;
@@ -38,6 +39,8 @@ pub struct Renderer {
     provider_map: HashMap<Url, ArcTagsProvider>,
     /// 组件库列表
     library_list: Vec<Url>,
+    /// 文件被创建时，将会创建的文件，创建完成后清空
+    will_create_files: HashSet<Url>,
 }
 
 impl Renderer {
@@ -48,6 +51,7 @@ impl Renderer {
             render_cache: RenderCacheGraph::new(),
             provider_map: HashMap::new(),
             library_list: vec![],
+            will_create_files: HashSet::new(),
         }
     }
 

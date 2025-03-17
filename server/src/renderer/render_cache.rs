@@ -84,6 +84,15 @@ impl RenderCacheGraph {
         }
     }
 
+    /// 移除节点，同时移除节点上的边，同时删除对应的文件
+    pub fn remove_node(&mut self, uri: &Url, root_uri: &Url, target_root_uri: &Url) -> RenderCache {
+        let idx = *self.idx_map.get(uri).unwrap();
+        let cache = self.graph.remove_node(idx).unwrap();
+        self.remove_node_file(uri, root_uri, target_root_uri);
+        self.idx_map.remove(uri);
+        cache
+    }
+
     /// 将所有虚拟边加入 graph
     pub fn flush(&mut self) {
         for (from, to, relation) in self.virtual_edges.take() {
@@ -129,13 +138,34 @@ impl RenderCacheGraph {
     pub fn render_node(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
         let node = *self.idx_map.get(uri).unwrap();
         let cache = &self.graph[node];
-        if let RenderCache::VueRenderCache(_) = cache {
-            let uri = self.get_node_uri(node);
-            let content = self.get_node_render_content(uri).unwrap();
-            let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
-            tokio::spawn(async {
-                fs::write(target_path, content).await.unwrap();
-            });
+        match cache {
+            RenderCache::VueRenderCache(_) => {
+                let uri = self.get_node_uri(node);
+                let content = self.get_node_render_content(uri).unwrap();
+                let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+                tokio::spawn(async {
+                    fs::write(target_path, content).await.unwrap();
+                });
+            }
+            RenderCache::TsRenderCache(_) => {
+                // 如果不存在硬链接，那么增加
+                let uri = self.get_node_uri(node);
+                let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+                if !target_path.exists() {
+                    let src_path = uri.to_file_path().unwrap();
+                    tokio::spawn(async {
+                        fs::hard_link(src_path, target_path).await.unwrap();
+                    });
+                }
+            }
+            RenderCache::LibRenderCache(_) => {}
+            RenderCache::Unknown => {
+                let uri = self.get_node_uri(node);
+                let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+                tokio::spawn(async {
+                    fs::write(target_path, "").await.unwrap();
+                });
+            }
         }
     }
 
@@ -160,6 +190,16 @@ impl RenderCacheGraph {
         } else {
             None
         }
+    }
+
+    /// 删除节点对应的文件
+    fn remove_node_file(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
+        let node = *self.idx_map.get(uri).unwrap();
+        let uri = self.get_node_uri(node);
+        let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+        tokio::spawn(async {
+            fs::remove_file(target_path).await.unwrap();
+        });
     }
 }
 

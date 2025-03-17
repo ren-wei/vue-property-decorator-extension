@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use html_languageservice::parser::html_document::Node;
 use lsp_textdocument::FullTextDocument;
@@ -8,7 +8,8 @@ use tokio::{
     io::AsyncReadExt,
 };
 use tower_lsp::lsp_types::{
-    DidChangeTextDocumentParams, Range, TextDocumentContentChangeEvent, Url,
+    CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, Range, RenameFilesParams,
+    TextDocumentContentChangeEvent, Url,
 };
 use tracing::{error, warn};
 use walkdir::WalkDir;
@@ -39,6 +40,12 @@ pub trait Render {
         document: &FullTextDocument,
     ) -> DidChangeTextDocumentParams;
     fn save(&self, uri: &Url);
+    fn is_wait_create(&self, uri: &Url) -> bool;
+    fn will_create_files(&mut self, params: &CreateFilesParams);
+    async fn did_create_files(&mut self, did_create_files: CreateFilesParams);
+    fn will_rename_files(&mut self, params: &RenameFilesParams);
+    async fn did_rename_files(&mut self, params: RenameFilesParams);
+    async fn did_delete_files(&mut self, params: DeleteFilesParams);
 }
 
 impl Render for Renderer {
@@ -349,6 +356,62 @@ impl Render for Renderer {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.as_ref().unwrap();
         self.render_cache
             .render_node(uri, root_uri, target_root_uri);
+    }
+
+    /// 是否需要等待文件创建
+    fn is_wait_create(&self, uri: &Url) -> bool {
+        self.will_create_files.contains(uri)
+    }
+
+    fn will_create_files(&mut self, params: &CreateFilesParams) {
+        for file in &params.files {
+            self.will_create_files
+                .insert(Url::from_str(&file.uri).unwrap());
+        }
+    }
+
+    async fn did_create_files(&mut self, params: CreateFilesParams) {
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        for file in params.files {
+            let uri = Url::from_str(&file.uri).unwrap();
+            self.create_node(&uri).await;
+            self.render_cache
+                .render_node(&uri, &root_uri, &target_root_uri);
+            self.will_create_files.remove(&uri);
+        }
+        self.render_cache.flush();
+    }
+
+    fn will_rename_files(&mut self, params: &RenameFilesParams) {
+        for file in &params.files {
+            self.will_create_files
+                .insert(Url::from_str(&file.new_uri).unwrap());
+        }
+    }
+
+    async fn did_rename_files(&mut self, params: RenameFilesParams) {
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        for file in params.files {
+            let old_uri = Url::from_str(&file.old_uri).unwrap();
+            self.render_cache
+                .remove_node(&old_uri, &root_uri, &target_root_uri);
+
+            let new_uri = Url::from_str(&file.new_uri).unwrap();
+            self.create_node(&new_uri).await;
+            self.render_cache
+                .render_node(&new_uri, &root_uri, &target_root_uri);
+            self.will_create_files.remove(&new_uri);
+        }
+        self.render_cache.flush();
+    }
+
+    async fn did_delete_files(&mut self, params: DeleteFilesParams) {
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        for file in params.files {
+            let uri = Url::from_str(&file.uri).unwrap();
+            self.render_cache
+                .remove_node(&uri, &root_uri, &target_root_uri);
+        }
     }
 }
 
