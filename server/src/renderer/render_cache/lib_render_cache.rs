@@ -1,13 +1,33 @@
+use html_languageservice::html_data::Description;
 use std::{collections::HashMap, fs, path::PathBuf};
+use tower_lsp::lsp_types::Location;
 
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
 use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem, Stmt};
-use tower_lsp::lsp_types::{Location, Range, Url};
+use tower_lsp::lsp_types::{Range, Url};
 
 use crate::ast;
 
-use super::render_cache::{LibComponent, LibComponentProp};
+pub struct LibRenderCache {
+    pub components: Vec<LibComponent>,
+}
+
+#[derive(Debug)]
+pub struct LibComponent {
+    pub name: String,
+    pub name_location: Location,
+    pub description: Option<Description>,
+    /// 在组件上挂载的静态属性组件
+    pub static_props: Vec<Box<LibComponent>>,
+    /// 定义的属性，包括继承的属性，不包括方法
+    pub props: Vec<LibComponentProp>,
+}
+
+#[derive(Debug)]
+pub struct LibComponentProp {
+    pub name: String,
+}
 
 /// 解析组件库
 /// 从 types/index.d.ts 文件中解析组件库

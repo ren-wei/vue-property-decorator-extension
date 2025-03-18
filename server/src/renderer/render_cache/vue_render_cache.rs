@@ -3,11 +3,29 @@ use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
 use tower_lsp::lsp_types::Range;
 
-use super::{
-    parse_document::{self},
+use crate::renderer::{
+    parse_document,
     parse_script::{self, ExtendsComponent, ParseScriptResult, RegisterComponent},
     template_compile::{self, CompileMapping},
 };
+
+/// vue 组件的渲染缓存
+pub struct VueRenderCache {
+    /// 渲染前的文档，与文件系统中相同
+    pub document: FullTextDocument,
+    // 解析文档
+    pub template: Node,
+    pub script: Node,
+    pub style: Vec<Node>,
+    // 解析模版
+    pub name_range: Range,
+    pub description: Option<Description>,
+    pub template_compile_result: String,
+    pub mapping: CompileMapping,
+    /// 解析脚本得到的属性
+    pub props: Vec<String>,
+    pub render_insert_offset: usize,
+}
 
 /// 解析 vue 组件
 pub fn parse_vue_file(document: &FullTextDocument) -> Option<ParseVueFileResult> {

@@ -1,13 +1,18 @@
+pub mod lib_render_cache;
+pub mod ts_render_cache;
+pub mod vue_render_cache;
+
 use std::{collections::HashMap, ops::Index};
 
-use html_languageservice::{html_data::Description, parser::html_document::Node};
-use lsp_textdocument::FullTextDocument;
+use lib_render_cache::LibRenderCache;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
 use tokio::fs;
-use tower_lsp::lsp_types::{Location, Range, Url};
+use tower_lsp::lsp_types::Url;
+use ts_render_cache::TsRenderCache;
+use vue_render_cache::VueRenderCache;
 
-use super::{combined_rendered_results, template_compile::CompileMapping, Renderer};
+use super::{combined_rendered_results, Renderer};
 
 type RRGraph = Graph<RenderCache, Relationship>;
 
@@ -354,58 +359,6 @@ pub enum RenderCache {
     TsRenderCache(TsRenderCache),
     LibRenderCache(LibRenderCache),
     Unknown,
-}
-
-/// vue 组件的渲染缓存
-pub struct VueRenderCache {
-    /// 渲染前的文档，与文件系统中相同
-    pub document: FullTextDocument,
-    // 解析文档
-    pub template: Node,
-    pub script: Node,
-    pub style: Vec<Node>,
-    // 解析模版
-    pub name_range: Range,
-    pub description: Option<Description>,
-    pub template_compile_result: String,
-    pub mapping: CompileMapping,
-    /// 解析脚本得到的属性
-    pub props: Vec<String>,
-    pub render_insert_offset: usize,
-}
-
-/// ts 文件的渲染缓存
-pub struct TsRenderCache {
-    /// ts 文件中定义的组件
-    pub ts_component: Option<TsComponent>,
-    /// 从当前文件定义并导出的名称
-    pub local_exports: Vec<Option<String>>,
-}
-
-pub struct TsComponent {
-    pub name_range: Range,
-    pub description: Option<Description>,
-    pub props: Vec<String>,
-}
-
-pub struct LibRenderCache {
-    pub components: Vec<LibComponent>,
-}
-
-#[derive(Debug)]
-pub struct LibComponent {
-    pub name: String,
-    pub name_location: Location,
-    pub description: Option<Description>,
-    /// 在组件上挂载的静态属性组件
-    pub static_props: Vec<Box<LibComponent>>,
-    /// 定义的属性，包括继承的属性，不包括方法
-    pub props: Vec<LibComponentProp>,
-}
-
-#[derive(Debug)]
-pub struct LibComponentProp {
-    pub name: String,
 }
 
 #[derive(PartialEq)]

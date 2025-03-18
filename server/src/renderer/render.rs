@@ -21,12 +21,13 @@ use crate::renderer::{
 };
 
 use super::{
-    parse_import_path, parse_lib,
+    parse_import_path,
     parse_script::{ExtendsComponent, RegisterComponent},
-    parse_ts_file, parse_vue_file,
     render_cache::{
-        ExtendsRelationship, LibRenderCache, RegisterRelationship, Relationship, RenderCache,
-        TransferRelationship, TsComponent, TsRenderCache, VueRenderCache,
+        lib_render_cache::{self, LibRenderCache},
+        ts_render_cache::{self, TsComponent, TsRenderCache},
+        vue_render_cache::{self, VueRenderCache},
+        ExtendsRelationship, RegisterRelationship, Relationship, RenderCache, TransferRelationship,
     },
     Renderer,
 };
@@ -509,7 +510,7 @@ impl Renderer {
     /// * 如果存在注册关系，那么创建注册边
     async fn create_vue_node(&mut self, uri: &Url) -> Option<()> {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
-        let result = parse_vue_file::parse_vue_file(&document)?;
+        let result = vue_render_cache::parse_vue_file(&document)?;
         self.render_cache.add_node(
             uri,
             RenderCache::VueRenderCache(VueRenderCache {
@@ -537,7 +538,7 @@ impl Renderer {
     /// * 创建节点间中转关系
     async fn create_ts_node(&mut self, uri: &Url) -> Option<()> {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
-        let result = parse_ts_file::parse_ts_file(&document)?;
+        let result = ts_render_cache::parse_ts_file(&document)?;
         let mut ts_component = None;
         if let Some((name_range, description, props, extends_component, registers)) =
             result.ts_component
@@ -584,7 +585,7 @@ impl Renderer {
         self.render_cache.add_node(
             uri,
             RenderCache::LibRenderCache(LibRenderCache {
-                components: parse_lib::parse_specific_lib(uri),
+                components: lib_render_cache::parse_specific_lib(uri),
             }),
         );
     }

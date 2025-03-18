@@ -1,15 +1,31 @@
 use html_languageservice::html_data::Description;
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
-use tower_lsp::lsp_types::{Range, Url};
+use tower_lsp::lsp_types::Range;
+use tower_lsp::lsp_types::Url;
 use tracing::error;
 
 use crate::ast::{self, TsFileExportResult};
+use crate::renderer::parse_script;
+use crate::renderer::parse_script::ExtendsComponent;
+use crate::renderer::parse_script::ParseScriptResult;
+use crate::renderer::parse_script::RegisterComponent;
 
-use super::{
-    parse_script::{self, ExtendsComponent, ParseScriptResult, RegisterComponent},
-    Renderer,
-};
+use super::Renderer;
+
+/// ts 文件的渲染缓存
+pub struct TsRenderCache {
+    /// ts 文件中定义的组件
+    pub ts_component: Option<TsComponent>,
+    /// 从当前文件定义并导出的名称
+    pub local_exports: Vec<Option<String>>,
+}
+
+pub struct TsComponent {
+    pub name_range: Range,
+    pub description: Option<Description>,
+    pub props: Vec<String>,
+}
 
 /// # 解析 ts 文件
 /// 如果 ts 文件默认导出组件，那么进行解析
