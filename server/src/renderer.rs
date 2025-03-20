@@ -90,7 +90,10 @@ impl Renderer {
         let (registered_uri, register) = self.render_cache.get_register(uri, tag)?;
         let node = self.render_cache.get(registered_uri)?;
         let range = match node {
-            RenderCache::VueRenderCache(cache) => cache.name_range,
+            RenderCache::VueRenderCache(cache) => Range {
+                start: cache.document.position_at(cache.name_range.0 as u32),
+                end: cache.document.position_at(cache.name_range.1 as u32),
+            },
             RenderCache::TsRenderCache(cache) => {
                 if register.export_name.is_none() {
                     cache.ts_component.as_ref()?.name_range

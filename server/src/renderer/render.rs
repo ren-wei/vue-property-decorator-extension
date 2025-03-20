@@ -1,30 +1,22 @@
 use std::{path::PathBuf, str::FromStr};
 
-use html_languageservice::parser::html_document::Node;
 use lsp_textdocument::FullTextDocument;
-use swc_common::source_map::SmallPos;
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
 };
 use tower_lsp::lsp_types::{
-    CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, Range, RenameFilesParams,
+    CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, RenameFilesParams,
     TextDocumentContentChangeEvent, Url,
 };
 use tracing::{error, warn};
 use walkdir::WalkDir;
 
-use crate::renderer::{
-    parse_document,
-    parse_script::{self, ParseScriptResult},
-    template_compile,
-};
-
 use super::{
     parse_import_path,
     parse_script::{ExtendsComponent, RegisterComponent},
     render_cache::{
-        lib_render_cache::{self, LibRenderCache},
+        lib_render_cache,
         ts_render_cache::{self, TsComponent, TsRenderCache},
         vue_render_cache::{self, VueRenderCache},
         ExtendsRelationship, RegisterRelationship, Relationship, RenderCache, TransferRelationship,
@@ -112,7 +104,7 @@ impl Render for Renderer {
     }
 
     /// 当文件内容更改时
-    /// * 重新解析当前文件
+    /// * 更新当前文件
     /// * 更新继承关系
     /// * 更新注册关系
     /// * 更新继承自当前文件的文件
@@ -122,221 +114,37 @@ impl Render for Renderer {
         params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) -> DidChangeTextDocumentParams {
-        let cache = self.render_cache.get_mut(uri).unwrap();
-        match cache {
-            RenderCache::VueRenderCache(vue_cache) => {
-                // 如果变更超过一个，直接全量更新
-                if params.content_changes.len() != 1 {
-                    self.render_cache.remove_outgoing_edge(uri);
-                    self.create_node(uri).await;
-                    let content = self.render_cache.get_node_render_content(uri).unwrap();
-                    DidChangeTextDocumentParams {
-                        text_document: params.text_document,
-                        content_changes: vec![TextDocumentContentChangeEvent {
-                            range: None,
-                            range_length: None,
-                            text: content,
-                        }],
-                    }
-                } else {
-                    let change = &params.content_changes[0];
-                    let range = change.range.unwrap();
-                    let range_length = change.range_length.unwrap() as usize;
-                    let range_start = vue_cache.document.offset_at(range.start) as usize;
-                    let range_end = vue_cache.document.offset_at(range.end) as usize;
-                    // 更新缓存文档
-                    vue_cache
-                        .document
-                        .update(&[change.clone()], document.version());
-                    let source = document.get_content(None);
-                    // 节点需要增加的偏移量
-                    let incremental = change.text.len() as isize - range_length as isize;
-                    /// 位移节点
-                    fn move_node(node: &mut Node, incremental: isize) {
-                        node.start = (node.start as isize + incremental) as usize;
-                        if let Some(start_tag_end) = node.start_tag_end {
-                            node.start_tag_end =
-                                Some((start_tag_end as isize + incremental) as usize);
-                        }
-                        if let Some(end_tag_start) = node.end_tag_start {
-                            node.end_tag_start =
-                                Some((end_tag_start as isize + incremental) as usize);
-                        }
-                        node.end = (node.end as isize + incremental) as usize;
-                    }
-                    // 1. 如果变更处于 template 节点
-                    if vue_cache.template.start < range_start && range_end < vue_cache.template.end
-                    {
-                        // 重新解析 template 节点
-                        let node = parse_document::parse_as_node(
-                            document,
-                            Some(Range::new(
-                                document.position_at(vue_cache.template.start as u32),
-                                document.position_at(
-                                    (vue_cache.template.end as isize + incremental) as u32,
-                                ),
-                            )),
-                        );
-                        // 位移 script 节点和 style 节点
-                        move_node(&mut vue_cache.script, incremental);
-                        for style in &mut vue_cache.style {
-                            move_node(style, incremental);
-                        }
-
-                        if let Some(node) = node {
-                            vue_cache.template = node;
-                            vue_cache.render_insert_offset =
-                                (vue_cache.render_insert_offset as isize + incremental) as usize;
-                            // 进行模版编译
-                            let (template_compile_result, mapping) =
-                                template_compile::template_compile(&vue_cache.template, source);
-                            vue_cache.template_compile_result = template_compile_result;
-                            vue_cache.mapping = mapping;
-                            // 组合渲染结果
-                            let content = self.render_cache.get_node_render_content(uri).unwrap();
-                            return DidChangeTextDocumentParams {
-                                text_document: params.text_document,
-                                content_changes: vec![TextDocumentContentChangeEvent {
-                                    range: None,
-                                    range_length: None,
-                                    text: content,
-                                }],
-                            };
-                        } else {
-                            vue_cache.template.end += incremental as usize;
-                            // template 节点解析失败，将变更内容转换为空格后输出
-                            return DidChangeTextDocumentParams {
-                                text_document: params.text_document.clone(),
-                                content_changes: vec![TextDocumentContentChangeEvent {
-                                    range: change.range,
-                                    range_length: change.range_length,
-                                    text: " ".repeat(change.text.len()),
-                                }],
-                            };
-                        }
-                    }
-                    // 2. 如果变更处于 script 节点
-                    if vue_cache
-                        .script
-                        .start_tag_end
-                        .is_some_and(|v| v <= range_start)
-                        && vue_cache
-                            .script
-                            .end_tag_start
-                            .is_some_and(|v| range_end < v)
-                    {
-                        vue_cache.script.end_tag_start = Some(
-                            (vue_cache.script.end_tag_start.unwrap() as isize + incremental)
-                                as usize,
-                        );
-                        vue_cache.script.end =
-                            (vue_cache.script.end as isize + incremental) as usize;
-                        for style in &mut vue_cache.style {
-                            move_node(style, incremental);
-                        }
-                        // 尝试`解析脚本`
-                        if let Some(ParseScriptResult {
-                            name_span,
-                            description,
-                            props,
-                            render_insert_offset,
-                            extends_component,
-                            registers,
-                        }) = parse_script::parse_script(
-                            source,
-                            vue_cache.script.start_tag_end.unwrap(),
-                            vue_cache.script.end_tag_start.unwrap(),
-                        ) {
-                            vue_cache.render_insert_offset = render_insert_offset;
-                            vue_cache.name_range = Range {
-                                start: document.position_at(name_span.lo.to_u32()),
-                                end: document.position_at(name_span.hi.to_u32()),
-                            };
-                            vue_cache.description = description;
-                            vue_cache.props = props;
-                            // 处理 extends_component 和 registers
-                            self.render_cache.remove_outgoing_edge(uri);
-                            self.create_extends_relation(uri, extends_component).await;
-                            self.create_registers_relation(uri, registers).await;
-                        } else {
-                            // 解析失败，位移 render_insert_offset
-                            vue_cache.render_insert_offset =
-                                (vue_cache.render_insert_offset as isize + incremental) as usize;
-                        }
-
-                        return params;
-                    }
-
-                    // 3. 如果变更位于 style 节点
-                    let mut is_in_style = false;
-                    for style in &mut vue_cache.style {
-                        if is_in_style {
-                            style.start = (style.start as isize + incremental) as usize;
-                            if let Some(start_tag_end) = style.start_tag_end {
-                                style.start_tag_end =
-                                    Some((start_tag_end as isize + incremental) as usize);
-                            }
-                        }
-                        if !is_in_style
-                            && style.start_tag_end.is_some_and(|v| v <= range_start)
-                            && style.end_tag_start.is_some_and(|v| range_end < v)
-                        {
-                            is_in_style = true;
-                        }
-                        if is_in_style {
-                            if let Some(end_tag_start) = style.end_tag_start {
-                                style.end_tag_start =
-                                    Some((end_tag_start as isize + incremental) as usize);
-                            }
-                            style.end = (style.end as isize + incremental) as usize;
-                        }
-                    }
-                    if is_in_style {
-                        return DidChangeTextDocumentParams {
-                            text_document: params.text_document,
-                            content_changes: vec![TextDocumentContentChangeEvent {
-                                range: change.range,
-                                range_length: change.range_length,
-                                text: " ".repeat(change.text.len()),
-                            }],
-                        };
-                    }
-
-                    // 4. 如果变更处于节点边界，进行全量渲染
-                    self.render_cache.remove_outgoing_edge(uri);
-                    self.create_node(uri).await;
-                    if let Some(content) = self.render_cache.get_node_render_content(uri) {
-                        DidChangeTextDocumentParams {
-                            text_document: params.text_document,
-                            content_changes: vec![TextDocumentContentChangeEvent {
-                                range: None,
-                                range_length: None,
-                                text: content,
-                            }],
-                        }
-                    } else {
-                        DidChangeTextDocumentParams {
-                            text_document: params.text_document.clone(),
-                            content_changes: vec![TextDocumentContentChangeEvent {
-                                range: None,
-                                range_length: None,
-                                text: "".to_string(),
-                            }],
-                        }
-                    }
+        if params.content_changes.len() > 1 {
+            self.render_cache.remove_outgoing_edge(uri);
+            self.create_node(uri).await;
+            self.render_cache.flush();
+            // TODO: 更新影响的组件
+            if let Some(content) = self.render_cache.get_node_render_content(uri) {
+                DidChangeTextDocumentParams {
+                    text_document: params.text_document,
+                    content_changes: vec![TextDocumentContentChangeEvent {
+                        range: None,
+                        range_length: None,
+                        text: content,
+                    }],
                 }
+            } else {
+                params
             }
-            RenderCache::TsRenderCache(_) => {
+        } else {
+            let cache = self.render_cache.get_mut(uri).unwrap();
+            let result = cache.update(params.content_changes[0].clone(), document);
+            if let Some(result) = result {
+                // TODO: 更新影响的组件
+                DidChangeTextDocumentParams {
+                    text_document: params.text_document,
+                    content_changes: result.changes,
+                }
+            } else {
+                // 重新解析节点
                 self.render_cache.remove_outgoing_edge(uri);
                 self.create_node(uri).await;
-                params
-            }
-            RenderCache::LibRenderCache(_) => {
-                error!("Library node update: {}", uri.path());
-                params
-            }
-            RenderCache::Unknown => {
-                self.create_node(uri).await;
+                self.render_cache.flush();
                 if let Some(content) = self.render_cache.get_node_render_content(uri) {
                     DidChangeTextDocumentParams {
                         text_document: params.text_document,
@@ -524,6 +332,7 @@ impl Renderer {
                 render_insert_offset: result.render_insert_offset,
                 template_compile_result: result.template_compile_result,
                 mapping: result.mapping,
+                safe_update_range: result.safe_update_range,
             }),
         );
         self.create_extends_relation(uri, result.extends_component)
@@ -584,9 +393,7 @@ impl Renderer {
     async fn create_lib_node(&mut self, uri: &Url) {
         self.render_cache.add_node(
             uri,
-            RenderCache::LibRenderCache(LibRenderCache {
-                components: lib_render_cache::parse_specific_lib(uri),
-            }),
+            RenderCache::LibRenderCache(lib_render_cache::parse_specific_lib(uri)),
         );
     }
 

@@ -1,6 +1,6 @@
 use html_languageservice::html_data::Description;
-use swc_common::{source_map::SmallPos, Span};
-use swc_ecma_ast::Module;
+use swc_common::{source_map::SmallPos, Span, Spanned};
+use swc_ecma_ast::{ClassMember, Module};
 
 use crate::ast;
 
@@ -22,6 +22,7 @@ pub fn parse_module(
 ) -> Option<ParseScriptResult> {
     let mut extends_component = None;
     if let Some(class) = ast::get_default_class_expr_from_module(module) {
+        let mut safe_update_range = vec![];
         let mut props = vec![];
         for member in class
             .class
@@ -31,6 +32,38 @@ pub fn parse_module(
             .collect::<Vec<_>>()
         {
             props.push(ast::get_class_member_name(member));
+            // 获取安全更新范围
+            match member {
+                ClassMember::Method(method) => {
+                    // 方法参数范围
+                    let params = &method.function.params;
+                    if params.len() > 0 {
+                        safe_update_range.push((
+                            params[0].span_lo().to_usize(),
+                            params[params.len() - 1].span_hi().to_usize(),
+                        ));
+                    }
+                    // 方法体范围
+                    if let Some(body) = &method.function.body {
+                        safe_update_range.push((body.span.lo.to_usize(), body.span.hi.to_usize()));
+                    }
+                }
+                ClassMember::PrivateMethod(method) => {
+                    // 方法参数范围
+                    let params = &method.function.params;
+                    if params.len() > 0 {
+                        safe_update_range.push((
+                            params[0].span_lo().to_usize(),
+                            params[params.len() - 1].span_hi().to_usize(),
+                        ));
+                    }
+                    // 方法体范围
+                    if let Some(body) = &method.function.body {
+                        safe_update_range.push((body.span.lo.to_usize(), body.span.hi.to_usize()));
+                    }
+                }
+                _ => {}
+            }
         }
         let extends_ident = ast::get_extends_component(class);
         if let Some(extends_ident) = extends_ident {
@@ -61,6 +94,7 @@ pub fn parse_module(
             render_insert_offset,
             extends_component,
             registers,
+            safe_update_range,
         })
     } else {
         None
@@ -98,6 +132,7 @@ pub struct ParseScriptResult {
     pub render_insert_offset: usize,
     pub extends_component: Option<ExtendsComponent>,
     pub registers: Vec<RegisterComponent>,
+    pub safe_update_range: Vec<(usize, usize)>,
 }
 
 #[cfg(test)]

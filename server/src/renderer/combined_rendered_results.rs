@@ -1,4 +1,5 @@
 /// 组合渲染结果
+/// * props 中包含原文件的属性和继承的属性并且继承的属性位于原文件的属性之后
 pub fn combined_rendered_results(
     script_start_pos: usize,
     script_end_pos: usize,

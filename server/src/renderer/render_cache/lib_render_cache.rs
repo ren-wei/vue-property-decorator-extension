@@ -10,6 +10,7 @@ use tower_lsp::lsp_types::{Range, Url};
 use crate::ast;
 
 pub struct LibRenderCache {
+    pub name: String,
     pub components: Vec<LibComponent>,
 }
 
@@ -101,9 +102,15 @@ fn _parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
 /// * 存在 types/index.d.ts 文件
 /// * 如果遍历 types 目录时是一个文件，那么取其中的 class 作为组件
 /// * 如果遍历 types 目录时是一个目录，那么存在静态属性的文件是主组件其他组件挂载到该组件下
-pub fn parse_specific_lib(uri: &Url) -> Vec<LibComponent> {
+pub fn parse_specific_lib(uri: &Url) -> LibRenderCache {
     let mut components = vec![];
     let mut file_path = uri.to_file_path().unwrap();
+    let name = file_path
+        .file_name()
+        .map(|v| v.to_str())
+        .flatten()
+        .unwrap_or(uri.path())
+        .to_string();
     file_path.push("types/index.d.ts");
     if file_path.is_file() {
         file_path.pop();
@@ -143,7 +150,10 @@ pub fn parse_specific_lib(uri: &Url) -> Vec<LibComponent> {
     for c in components {
         result.push(c.0);
     }
-    result
+    LibRenderCache {
+        name,
+        components: result,
+    }
 }
 
 /// 解析特定格式的组件文件

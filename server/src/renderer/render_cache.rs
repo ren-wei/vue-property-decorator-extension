@@ -5,14 +5,20 @@ pub mod vue_render_cache;
 use std::{collections::HashMap, ops::Index};
 
 use lib_render_cache::LibRenderCache;
+use lsp_textdocument::FullTextDocument;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
 use tokio::fs;
-use tower_lsp::lsp_types::Url;
+use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Url};
+use tracing::error;
 use ts_render_cache::TsRenderCache;
 use vue_render_cache::VueRenderCache;
 
-use super::{combined_rendered_results, Renderer};
+use super::{
+    combined_rendered_results,
+    parse_script::{ExtendsComponent, RegisterComponent},
+    Renderer,
+};
 
 type RRGraph = Graph<RenderCache, Relationship>;
 
@@ -359,6 +365,49 @@ pub enum RenderCache {
     TsRenderCache(TsRenderCache),
     LibRenderCache(LibRenderCache),
     Unknown,
+}
+
+impl RenderCache {
+    /// 更新渲染缓存返回变更结果
+    pub fn update(
+        &mut self,
+        change: TextDocumentContentChangeEvent,
+        document: &FullTextDocument,
+    ) -> Option<RenderCacheUpdateResult> {
+        match self {
+            RenderCache::VueRenderCache(vue_cache) => vue_cache.update(change, document),
+            RenderCache::TsRenderCache(ts_cache) => ts_cache.update(change, document),
+            RenderCache::LibRenderCache(lib_cache) => {
+                error!("lib update: {} {:?}", lib_cache.name, change);
+                Some(RenderCacheUpdateResult {
+                    changes: vec![change],
+                    is_change_prop: false,
+                    extends_component: None,
+                    registers: None,
+                    transfers: None,
+                })
+            }
+            RenderCache::Unknown => None,
+        }
+    }
+}
+
+/// # 渲染变更的结果
+/// * 属性是否更改（是否影响其他组件）
+/// * 继承关系是否改变（是否需要更新继承关系）
+/// * 注册关系是否改变（是否需要更新注册关系）
+/// * 转换关系是否改变（是否需要更新转换关系）
+pub struct RenderCacheUpdateResult {
+    /// 渲染内容的变更
+    pub changes: Vec<TextDocumentContentChangeEvent>,
+    /// 属性是否更新
+    pub is_change_prop: bool,
+    /// 继承组件如果更新，返回更新后的继承组件
+    pub extends_component: Option<ExtendsComponent>,
+    /// 注册关系如果更新，返回更新后的注册关系
+    pub registers: Option<Vec<RegisterComponent>>,
+    /// 转换关系如果更新，返回更新后的转换关系
+    pub transfers: Option<Vec<(Option<String>, Option<String>, String, bool)>>,
 }
 
 #[derive(PartialEq)]
