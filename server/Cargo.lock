@@ -346,9 +346,9 @@ dependencies = [
 
 [[package]]
 name = "html-languageservice"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e298ca4ded36c8255c25175dce26e0295cae07a75b11620000dc7868a3e63625"
+checksum = "df05cbd39b7692303a47b6fde0d44ce2c19ec70b3f8aa2c13e77bc221e09cc19"
 dependencies = [
  "async-trait",
  "lazy_static",
