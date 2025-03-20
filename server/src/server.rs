@@ -8,7 +8,8 @@ use html_languageservice::{
 };
 use lsp_textdocument::TextDocuments;
 use serde_json::{json, Value};
-use tokio::sync::Mutex;
+use std::time;
+use tokio::sync::{Mutex, RwLock};
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
@@ -34,7 +35,7 @@ pub struct VueLspServer {
     text_documents: Arc<Mutex<TextDocuments>>,
     data_manager: Mutex<HTMLDataManager>,
     html_server: Mutex<HTMLLanguageService>,
-    ts_server: Arc<Mutex<TsServer>>,
+    ts_server: Arc<RwLock<TsServer>>,
     renderer: Arc<Mutex<Renderer>>,
 }
 
@@ -52,7 +53,7 @@ impl VueLspServer {
             Arc::new(Mutex::new(TextDocuments::new()))
         };
         let renderer = Arc::new(Mutex::new(Renderer::new()));
-        let ts_server = Arc::new(Mutex::new(TsServer::new(
+        let ts_server = Arc::new(RwLock::new(TsServer::new(
             client.clone(),
             Arc::clone(&renderer),
         )));
@@ -74,8 +75,10 @@ impl VueLspServer {
     /// 在进行 html 服务器相关的操作前调用
     async fn update_html_languageservice(&self, uri: &Url) {
         debug!("(Vue2TsDecoratorServer/update_html_languageservice)");
-        let mut renderer = self.renderer.lock().await;
-        let tags_provider = renderer.get_tags_provider(uri).await;
+        let tags_provider = {
+            let mut renderer = self.renderer.lock().await;
+            renderer.get_tags_provider(uri).await
+        };
 
         let mut data_manager = self.data_manager.lock().await;
         data_manager.set_data_providers(true, vec![Box::new(tags_provider.clone())]);
@@ -105,7 +108,7 @@ impl LanguageServer for VueLspServer {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         if let Some(root_uri) = &params.root_uri {
             self.renderer.lock().await.init(root_uri).await;
-            let result = self.ts_server.lock().await.initialize(params).await?;
+            let result = self.ts_server.write().await.initialize(params).await?;
             let file_operation = Some(FileOperationRegistrationOptions {
                 filters: vec![FileOperationFilter {
                     scheme: Some("file".to_string()),
@@ -162,7 +165,7 @@ impl LanguageServer for VueLspServer {
     #[instrument]
     async fn initialized(&self, _params: InitializedParams) {
         info!("start");
-        self.ts_server.lock().await.initialized().await;
+        self.ts_server.read().await.initialized().await;
         info!("done");
     }
 
@@ -172,6 +175,7 @@ impl LanguageServer for VueLspServer {
             return;
         }
         info!("start");
+        let start_time = time::Instant::now();
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
             text_documents.listen(
@@ -195,12 +199,16 @@ impl LanguageServer for VueLspServer {
                     break;
                 }
             }
+            debug!("lock text_documents await");
             let text_documents = text_documents.lock().await;
+            debug!("lock text_documents");
             let document = text_documents.get_document(&uri).unwrap();
-            ts_server.lock().await.did_open(&uri, document).await;
+            debug!("lock ts_server await");
+            let mut ts_server = ts_server.write().await;
+            debug!("lock ts_server");
+            ts_server.did_open(&uri, document).await;
+            info!("done {:?}", start_time.elapsed());
         });
-
-        info!("done");
     }
 
     #[instrument]
@@ -209,6 +217,7 @@ impl LanguageServer for VueLspServer {
             return;
         }
         info!("start");
+        let start_time = time::Instant::now();
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
             text_documents.listen(
@@ -219,12 +228,11 @@ impl LanguageServer for VueLspServer {
         let uri = &params.text_document.uri.clone();
         let text_documents = self.text_documents.lock().await;
         let document = text_documents.get_document(uri).unwrap();
-        self.ts_server
-            .lock()
-            .await
-            .did_change(params, document)
-            .await;
-        info!("done");
+        debug!("lock ts_server await");
+        let mut ts_server = self.ts_server.write().await;
+        debug!("lock ts_server");
+        ts_server.did_change(params, document).await;
+        info!("done {:?}", start_time.elapsed());
     }
 
     #[instrument]
@@ -233,6 +241,7 @@ impl LanguageServer for VueLspServer {
             return;
         }
         info!("start");
+        let start_time = time::Instant::now();
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
             text_documents.listen(
@@ -240,8 +249,8 @@ impl LanguageServer for VueLspServer {
                 &serde_json::to_value(&params).unwrap(),
             );
         }
-        self.ts_server.lock().await.did_close(params).await;
-        info!("done");
+        self.ts_server.read().await.did_close(params).await;
+        info!("done {:?}", start_time.elapsed());
     }
 
     #[instrument]
@@ -250,8 +259,9 @@ impl LanguageServer for VueLspServer {
             return;
         }
         info!("start");
+        let start_time = time::Instant::now();
         self.renderer.lock().await.save(&params.text_document.uri);
-        info!("done");
+        info!("done {:?}", start_time.elapsed());
     }
 
     async fn will_create_files(&self, params: CreateFilesParams) -> Result<Option<WorkspaceEdit>> {
@@ -264,8 +274,10 @@ impl LanguageServer for VueLspServer {
     }
 
     async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
-        self.renderer.lock().await.will_rename_files(&params);
-        let response = self.ts_server.lock().await.will_rename_files(params).await;
+        {
+            self.renderer.lock().await.will_rename_files(&params);
+        }
+        let response = self.ts_server.read().await.will_rename_files(params).await;
         response
     }
 
@@ -283,6 +295,7 @@ impl LanguageServer for VueLspServer {
             return Ok(None);
         }
         info!("start");
+        let start_time = time::Instant::now();
         let mut hover = Ok(None);
         let uri = &params.text_document_position_params.text_document.uri;
         let position = &params.text_document_position_params.position;
@@ -296,7 +309,7 @@ impl LanguageServer for VueLspServer {
                     info!("In script");
                     hover = self
                         .ts_server
-                        .lock()
+                        .read()
                         .await
                         .hover(params.text_document_position_params)
                         .await;
@@ -307,7 +320,7 @@ impl LanguageServer for VueLspServer {
                     params.text_document_position_params.position = pos;
                     hover = self
                         .ts_server
-                        .lock()
+                        .read()
                         .await
                         .hover(params.text_document_position_params)
                         .await;
@@ -338,15 +351,17 @@ impl LanguageServer for VueLspServer {
                 }
             }
         }
-        info!("done");
+        info!("done {:?}", start_time.elapsed());
         hover
     }
 
+    #[instrument]
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         if !VueLspServer::is_uri_valid(&params.text_document_position.text_document.uri) {
             return Ok(None);
         }
-        info!("completion:start");
+        info!("start");
+        let start_time = time::Instant::now();
         let uri = &params.text_document_position.text_document.uri;
         let position = &params.text_document_position.position;
         let mut completion = Ok(None);
@@ -390,13 +405,19 @@ impl LanguageServer for VueLspServer {
             match typ {
                 PositionType::Script => {
                     let uri = uri.clone();
-                    completion = self.ts_server.lock().await.completion(params).await;
+                    debug!("lock ts_server await");
+                    let ts_server = self.ts_server.read().await;
+                    debug!("lock ts_server");
+                    completion = ts_server.completion(params).await;
                     completion_add_flag(&mut completion, &uri);
                 }
                 PositionType::TemplateExpr(pos) => {
                     let mut params = params.clone();
                     params.text_document_position.position = pos;
-                    completion = self.ts_server.lock().await.completion(params).await;
+                    debug!("lock ts_server await");
+                    let ts_server = self.ts_server.read().await;
+                    debug!("lock ts_server");
+                    completion = ts_server.completion(params).await;
                     completion_add_flag(&mut completion, uri);
                 }
                 PositionType::Template => {
@@ -407,9 +428,11 @@ impl LanguageServer for VueLspServer {
                     };
                     if let Some(html_document) = html_document {
                         let document_context = DefaultDocumentContext {};
+                        debug!("lock all await");
                         let data_manager = self.data_manager.lock().await;
                         let html_server = self.html_server.lock().await;
                         let text_documents = self.text_documents.lock().await;
+                        debug!("lock all");
                         let text_document = text_documents.get_document(uri).unwrap();
                         let html_result = html_server
                             .do_complete(
@@ -427,7 +450,7 @@ impl LanguageServer for VueLspServer {
             }
         }
 
-        info!("completion:done");
+        info!("done {:?}", start_time.elapsed());
         completion
     }
 
@@ -450,7 +473,7 @@ impl LanguageServer for VueLspServer {
         let original_uri = get_original_uri(&mut params);
         if let Some(original_uri) = original_uri {
             self.ts_server
-                .lock()
+                .read()
                 .await
                 .completion_resolve(params, serde_json::from_value(original_uri).unwrap())
                 .await
@@ -459,6 +482,7 @@ impl LanguageServer for VueLspServer {
         }
     }
 
+    #[instrument]
     async fn goto_definition(
         &self,
         params: GotoDefinitionParams,
@@ -466,7 +490,8 @@ impl LanguageServer for VueLspServer {
         if !VueLspServer::is_uri_valid(&params.text_document_position_params.text_document.uri) {
             return Ok(None);
         }
-        info!("goto_definition");
+        info!("start");
+        let start_time = time::Instant::now();
         let mut definition = Ok(None);
         let uri = &params.text_document_position_params.text_document.uri;
         let position = &params.text_document_position_params.position;
@@ -482,7 +507,7 @@ impl LanguageServer for VueLspServer {
                     debug!("Script");
                     definition = self
                         .ts_server
-                        .lock()
+                        .read()
                         .await
                         .goto_definition(params, false)
                         .await;
@@ -493,7 +518,7 @@ impl LanguageServer for VueLspServer {
                     params.text_document_position_params.position = pos;
                     definition = self
                         .ts_server
-                        .lock()
+                        .read()
                         .await
                         .goto_definition(params, true)
                         .await;
@@ -534,10 +559,11 @@ impl LanguageServer for VueLspServer {
             }
         }
 
-        info!("goto_definition done");
+        info!("done {:?}", start_time.elapsed());
         definition
     }
 
+    #[instrument]
     async fn document_symbol(
         &self,
         params: DocumentSymbolParams,
@@ -545,7 +571,8 @@ impl LanguageServer for VueLspServer {
         if !VueLspServer::is_uri_valid(&params.text_document.uri) {
             return Ok(None);
         }
-        info!("document_symbol start");
+        info!("start");
+        let start_time = time::Instant::now();
         let mut document_symbol_list = vec![];
         let uri = &params.text_document.uri;
         self.update_html_languageservice(uri).await;
@@ -555,7 +582,9 @@ impl LanguageServer for VueLspServer {
             renderer.get_html_document(uri)
         };
         if let Some(html_document) = html_document {
+            debug!("lock text_documents await");
             let text_documents = self.text_documents.lock().await;
+            debug!("lock text_documents");
             let text_document = text_documents.get_document(uri).unwrap();
 
             document_symbol_list =
@@ -563,16 +592,19 @@ impl LanguageServer for VueLspServer {
         }
         let script = document_symbol_list.iter_mut().find(|v| v.name == "script");
         if let Some(script) = script {
-            let ts_server = self.ts_server.lock().await;
+            debug!("lock ts_server await");
+            let ts_server = self.ts_server.read().await;
+            debug!("lock ts_server");
             let response = ts_server.document_symbol(params).await;
             if let Ok(Some(DocumentSymbolResponse::Nested(response))) = response {
                 script.children = Some(response);
             }
         }
-        info!("document_symbol done");
+        info!("done {:?}", start_time.elapsed());
         Ok(Some(DocumentSymbolResponse::Nested(document_symbol_list)))
     }
 
+    #[instrument]
     async fn semantic_tokens_full(
         &self,
         params: SemanticTokensParams,
@@ -580,13 +612,17 @@ impl LanguageServer for VueLspServer {
         if !VueLspServer::is_uri_valid(&params.text_document.uri) {
             return Ok(None);
         }
-        self.ts_server
-            .lock()
-            .await
-            .semantic_tokens_full(params)
-            .await
+        info!("start");
+        let start_time = time::Instant::now();
+        debug!("lock ts_server await");
+        let ts_server = self.ts_server.read().await;
+        debug!("lock ts_server");
+        let result = ts_server.semantic_tokens_full(params).await;
+        info!("done {:?}", start_time.elapsed());
+        result
     }
 
+    #[instrument]
     async fn semantic_tokens_range(
         &self,
         params: SemanticTokensRangeParams,
@@ -594,32 +630,43 @@ impl LanguageServer for VueLspServer {
         if !VueLspServer::is_uri_valid(&params.text_document.uri) {
             return Ok(None);
         }
-        self.ts_server
-            .lock()
-            .await
-            .semantic_tokens_range(params)
-            .await
+        info!("start");
+        let start_time = time::Instant::now();
+        debug!("lock ts_server await");
+        let ts_server = self.ts_server.read().await;
+        debug!("lock ts_server");
+        let result = ts_server.semantic_tokens_range(params).await;
+        info!("done {:?}", start_time.elapsed());
+        result
     }
 
+    #[instrument]
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         if !VueLspServer::is_uri_valid(&params.text_document.uri) {
             return Ok(None);
         }
-        self.ts_server.lock().await.code_action(params).await
+        info!("start");
+        let start_time = time::Instant::now();
+        debug!("lock ts_server await");
+        let ts_server = self.ts_server.read().await;
+        debug!("lock ts_server");
+        let result = ts_server.code_action(params).await;
+        info!("done {:?}", start_time.elapsed());
+        result
     }
 
     async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {
         let text_documents = self.text_documents.lock().await;
         if params.command == "vue2-ts-decorator.restart.tsserver" {
-            self.ts_server.lock().await.restart(&text_documents).await;
+            self.ts_server.write().await.restart(&text_documents).await;
             Ok(None)
         } else {
-            self.ts_server.lock().await.execute_command(params).await
+            self.ts_server.read().await.execute_command(params).await
         }
     }
 
     async fn shutdown(&self) -> Result<()> {
-        self.ts_server.lock().await.shutdown().await;
+        self.ts_server.read().await.shutdown().await;
         Ok(())
     }
 }

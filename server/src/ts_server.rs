@@ -22,6 +22,7 @@ use tower_lsp::{
         *,
     },
 };
+use tracing::debug;
 
 use crate::convert::{ConvertBack, ConvertOptions, ConvertTo};
 use crate::renderer::Renderer;
@@ -165,8 +166,10 @@ impl TsServer {
             renderer: Some(&renderer),
             ..Default::default()
         };
+        let params = params.convert_to(options).await;
+        drop(renderer);
         self.server
-            .send_notification::<DidChangeTextDocument>(params.convert_to(options).await)
+            .send_notification::<DidChangeTextDocument>(params)
             .await;
     }
 
@@ -226,11 +229,20 @@ impl TsServer {
             uri: Some(&uri),
             renderer: Some(&renderer),
         };
-        self.server
-            .send_request::<Completion>(params.convert_to(options).await)
-            .await
-            .convert_back(options)
-            .await
+        let params = params.convert_to(options).await;
+        drop(renderer);
+
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+        let result = self.server.send_request::<Completion>(params).await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        result.convert_back(options).await
     }
 
     pub async fn completion_resolve(
@@ -243,11 +255,23 @@ impl TsServer {
             uri: Some(&original_uri),
             renderer: Some(&renderer),
         };
-        self.server
-            .send_request::<ResolveCompletionItem>(params.convert_to(options).await)
-            .await
-            .convert_back(options)
-            .await
+        let params = params.convert_to(options).await;
+        drop(renderer);
+
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+        let result = self
+            .server
+            .send_request::<ResolveCompletionItem>(params)
+            .await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&original_uri),
+            renderer: Some(&renderer),
+        };
+        result.convert_back(options).await
     }
 
     pub async fn goto_definition(
@@ -260,17 +284,26 @@ impl TsServer {
             .text_document
             .uri
             .clone();
+
         let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             uri: Some(&uri),
             renderer: Some(&renderer),
         };
-        let response = self
-            .server
-            .send_request::<GotoDefinition>(params.convert_to(options).await)
-            .await
-            .convert_back(options)
-            .await?;
+        let params = params.convert_to(options).await;
+        drop(renderer);
+
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+        let response = self.server.send_request::<GotoDefinition>(params).await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        let response = response.convert_back(options).await?;
 
         if is_in_template {
             if let Some(response) = response {
@@ -418,11 +451,23 @@ impl TsServer {
             uri: Some(&uri),
             renderer: Some(&renderer),
         };
-        self.server
-            .send_request::<DocumentSymbolRequest>(params.convert_to(options).await)
-            .await
-            .convert_back(options)
-            .await
+        let params = params.convert_to(options).await;
+        drop(renderer);
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+
+        let result = self
+            .server
+            .send_request::<DocumentSymbolRequest>(params)
+            .await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        result.convert_back(options).await
     }
 
     pub async fn semantic_tokens_full(
@@ -435,11 +480,23 @@ impl TsServer {
             uri: Some(&uri),
             renderer: Some(&renderer),
         };
-        self.server
-            .send_request::<SemanticTokensFullRequest>(params.convert_to(options).await)
-            .await
-            .convert_back(options)
-            .await
+        let params = params.convert_to(options).await;
+        drop(renderer);
+
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+        let result = self
+            .server
+            .send_request::<SemanticTokensFullRequest>(params)
+            .await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        result.convert_back(options).await
     }
 
     pub async fn semantic_tokens_range(
@@ -452,11 +509,23 @@ impl TsServer {
             uri: Some(&uri),
             renderer: Some(&renderer),
         };
-        self.server
-            .send_request::<SemanticTokensRangeRequest>(params.convert_to(options).await)
-            .await
-            .convert_back(options)
-            .await
+        let params = params.convert_to(options).await;
+        drop(renderer);
+
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+        let result = self
+            .server
+            .send_request::<SemanticTokensRangeRequest>(params)
+            .await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        result.convert_back(options).await
     }
 
     pub async fn code_action(
@@ -472,7 +541,11 @@ impl TsServer {
         let params = params.convert_to(options).await;
         drop(renderer);
 
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
         let response = self.server.send_request::<CodeActionRequest>(params).await;
+        debug!("request time: {:?}", start_time.elapsed());
+
         response.convert_back(&ConvertOptions::default()).await
     }
 

@@ -15,6 +15,7 @@ use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionTextEdit, Documentation, InsertTextFormat,
     Position, Range, TextEdit, Url,
 };
+use tracing::debug;
 
 use super::render_cache::RenderCache;
 use super::Renderer;
@@ -28,6 +29,7 @@ impl Renderer {
                 return provider.clone();
             }
         }
+        debug!("create TagsProvider");
         let mut tags = vec![];
         // 获取当前节点注册的组件
         let registers = self.render_cache.get_registers(uri);

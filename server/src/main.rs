@@ -1,7 +1,7 @@
 use tower_lsp::{LspService, Server};
 use vue_property_decorator_extension_server::{log::LspSubscriber, server::VueLspServer};
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
