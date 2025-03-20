@@ -111,6 +111,20 @@ impl RenderCacheGraph {
         }
     }
 
+    /// 更新上游节点版本
+    pub fn update_incoming_node_version(&mut self, uri: &Url) {
+        let idx = *self.idx_map.get(uri).unwrap();
+        let edges = self.graph.edges_directed(idx, Direction::Incoming);
+        let mut nodes = vec![];
+        for edge in edges {
+            nodes.push(edge.source());
+        }
+        for node in nodes {
+            let cache = self.graph.node_weight_mut(node).unwrap();
+            cache.update_version();
+        }
+    }
+
     /// 根据索引反向查找 uri
     fn get_node_uri(&self, idx: NodeIndex) -> &Url {
         for (key, value) in &self.idx_map {
@@ -216,6 +230,19 @@ impl RenderCacheGraph {
 
 /// extends
 impl RenderCacheGraph {
+    /// 移除继承关系
+    pub fn remove_extends_edge(&mut self, uri: &Url) {
+        let idx = *self.idx_map.get(uri).unwrap();
+        let edge = self
+            .graph
+            .edges_directed(idx, Direction::Outgoing)
+            .find(|v| v.weight().is_extends())
+            .map(|v| v.id());
+        if let Some(edge) = edge {
+            self.graph.remove_edge(edge);
+        }
+    }
+
     /// 获取当前节点的所有继承属性
     fn get_extends_props(graph: &RRGraph, node: NodeIndex) -> Vec<String> {
         let mut extends_props = vec![];
@@ -278,6 +305,20 @@ impl RenderCacheGraph {
 
 /// transfer
 impl RenderCacheGraph {
+    /// 移除转换关系
+    pub fn remove_transfers_edges(&mut self, uri: &Url) {
+        let idx = *self.idx_map.get(uri).unwrap();
+        let edges = self
+            .graph
+            .edges_directed(idx, Direction::Outgoing)
+            .filter(|v| v.weight().is_transfer())
+            .map(|v| v.id())
+            .collect::<Vec<_>>();
+        for edge in edges {
+            self.graph.remove_edge(edge);
+        }
+    }
+
     /// 从转换关系获取节点
     fn get_transfer_node(
         graph: &RRGraph,
@@ -350,6 +391,20 @@ impl RenderCacheGraph {
             edge.weight().as_register(),
         ))
     }
+
+    /// 移除注册关系
+    pub fn remove_registers_edges(&mut self, uri: &Url) {
+        let idx = *self.idx_map.get(uri).unwrap();
+        let edges = self
+            .graph
+            .edges_directed(idx, Direction::Outgoing)
+            .filter(|v| v.weight().is_register())
+            .map(|v| v.id())
+            .collect::<Vec<_>>();
+        for edge in edges {
+            self.graph.remove_edge(edge);
+        }
+    }
 }
 
 impl Index<&Url> for RenderCacheGraph {
@@ -388,6 +443,13 @@ impl RenderCache {
                 })
             }
             RenderCache::Unknown => None,
+        }
+    }
+
+    /// 如果是 vue 缓存，那么更新文档版本
+    pub fn update_version(&mut self) {
+        if let RenderCache::VueRenderCache(cache) = self {
+            cache.document.update(&[], cache.document.version() + 1);
         }
     }
 }
@@ -447,6 +509,14 @@ impl Relationship {
             relation
         } else {
             panic!("Relationship as_register but it's not RegisterRelationship");
+        }
+    }
+
+    pub fn is_transfer(&self) -> bool {
+        if let Relationship::TransferRelationship(_) = self {
+            true
+        } else {
+            false
         }
     }
 }

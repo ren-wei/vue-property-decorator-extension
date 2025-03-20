@@ -58,7 +58,8 @@ impl VueRenderCache {
             },
         };
         // 更新缓存文档
-        self.document.update(&[change.clone()], document.version());
+        self.document
+            .update(&[change.clone()], self.document.version() + 1);
         let source = document.get_content(None);
         // 节点需要增加的偏移量
         let incremental = change.text.len() as isize - range_length as isize;

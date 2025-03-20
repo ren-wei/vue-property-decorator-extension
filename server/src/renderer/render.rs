@@ -118,7 +118,8 @@ impl Render for Renderer {
             self.render_cache.remove_outgoing_edge(uri);
             self.create_node(uri).await;
             self.render_cache.flush();
-            // TODO: 更新影响的组件
+            // 更新影响的组件
+            self.render_cache.update_incoming_node_version(uri);
             if let Some(content) = self.render_cache.get_node_render_content(uri) {
                 DidChangeTextDocumentParams {
                     text_document: params.text_document,
@@ -135,7 +136,25 @@ impl Render for Renderer {
             let cache = self.render_cache.get_mut(uri).unwrap();
             let result = cache.update(params.content_changes[0].clone(), document);
             if let Some(result) = result {
-                // TODO: 更新影响的组件
+                // 更新影响的组件的版本
+                if result.is_change_prop {
+                    self.render_cache.update_incoming_node_version(uri);
+                }
+                // 更新继承关系
+                if let Some(extends_component) = result.extends_component {
+                    self.render_cache.remove_extends_edge(uri);
+                    self.create_extends_relation(uri, Some(extends_component));
+                }
+                // 更新注册关系
+                if let Some(registers) = result.registers {
+                    self.render_cache.remove_registers_edges(uri);
+                    self.create_registers_relation(uri, registers);
+                }
+                // 更新转换关系
+                if let Some(transfers) = result.transfers {
+                    self.render_cache.remove_transfers_edges(uri);
+                    self.create_transfers_relation(uri, transfers);
+                }
                 DidChangeTextDocumentParams {
                     text_document: params.text_document,
                     content_changes: result.changes,
@@ -335,9 +354,8 @@ impl Renderer {
                 safe_update_range: result.safe_update_range,
             }),
         );
-        self.create_extends_relation(uri, result.extends_component)
-            .await;
-        self.create_registers_relation(uri, result.registers).await;
+        self.create_extends_relation(uri, result.extends_component);
+        self.create_registers_relation(uri, result.registers);
         Some(())
     }
 
@@ -357,8 +375,8 @@ impl Renderer {
                 description,
                 props,
             });
-            self.create_extends_relation(uri, extends_component).await;
-            self.create_registers_relation(uri, registers).await;
+            self.create_extends_relation(uri, extends_component);
+            self.create_registers_relation(uri, registers);
         };
         self.render_cache.add_node(
             uri,
@@ -367,21 +385,7 @@ impl Renderer {
                 local_exports: result.local_exports,
             }),
         );
-        for (local, export_name, path, is_star_export) in result.transfers {
-            if let Some(transfer_uri) = self.get_uri_from_path(uri, &path) {
-                if Renderer::is_uri_valid(&transfer_uri) {
-                    self.render_cache.add_virtual_edge(
-                        uri,
-                        &transfer_uri,
-                        Relationship::TransferRelationship(TransferRelationship {
-                            local,
-                            export_name,
-                            is_star_export,
-                        }),
-                    );
-                }
-            }
-        }
+        self.create_transfers_relation(uri, result.transfers);
         Some(())
     }
 
@@ -398,11 +402,7 @@ impl Renderer {
     }
 
     /// 创建继承关系
-    async fn create_extends_relation(
-        &mut self,
-        uri: &Url,
-        extends_component: Option<ExtendsComponent>,
-    ) {
+    fn create_extends_relation(&mut self, uri: &Url, extends_component: Option<ExtendsComponent>) {
         if let Some(component) = extends_component {
             let extends_uri = self.get_uri_from_path(uri, &component.path);
             if let Some(extends_uri) = extends_uri {
@@ -422,7 +422,7 @@ impl Renderer {
     }
 
     /// 创建注册关系
-    async fn create_registers_relation(&mut self, uri: &Url, registers: Vec<RegisterComponent>) {
+    fn create_registers_relation(&mut self, uri: &Url, registers: Vec<RegisterComponent>) {
         for register in registers {
             let register_uri = self.get_uri_from_path(&uri, &register.path);
             if let Some(register_uri) = register_uri {
@@ -444,6 +444,29 @@ impl Renderer {
                     );
                 } else {
                     warn!("Register path parse fail: {}", register.path);
+                }
+            }
+        }
+    }
+
+    /// 更新转换关系
+    fn create_transfers_relation(
+        &mut self,
+        uri: &Url,
+        transfers: Vec<(Option<String>, Option<String>, String, bool)>,
+    ) {
+        for (local, export_name, path, is_star_export) in transfers {
+            if let Some(transfer_uri) = self.get_uri_from_path(uri, &path) {
+                if Renderer::is_uri_valid(&transfer_uri) {
+                    self.render_cache.add_virtual_edge(
+                        uri,
+                        &transfer_uri,
+                        Relationship::TransferRelationship(TransferRelationship {
+                            local,
+                            export_name,
+                            is_star_export,
+                        }),
+                    );
                 }
             }
         }
