@@ -96,6 +96,7 @@ impl Render for Renderer {
                 }
                 copy_dir(&node_modules_src_path, &node_modules_target_path).unwrap();
             } else {
+                #[cfg(not(target_os = "windows"))]
                 fs::symlink(node_modules_src_path, node_modules_target_path)
                     .await
                     .unwrap();
@@ -193,8 +194,10 @@ impl Render for Renderer {
 
     fn will_create_files(&mut self, params: &CreateFilesParams) {
         for file in &params.files {
-            self.will_create_files
-                .insert(Url::from_str(&file.uri).unwrap());
+            let uri = Url::from_str(&file.uri).unwrap();
+            if Renderer::is_uri_valid(&uri) {
+                self.will_create_files.insert(uri);
+            }
         }
     }
 
@@ -202,18 +205,23 @@ impl Render for Renderer {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let uri = Url::from_str(&file.uri).unwrap();
-            self.create_node(&uri).await;
-            self.render_cache
-                .render_node(&uri, &root_uri, &target_root_uri);
-            self.will_create_files.remove(&uri);
+            if Renderer::is_uri_valid(&uri) {
+                self.create_node(&uri).await;
+                self.render_cache
+                    .render_node(&uri, &root_uri, &target_root_uri);
+                self.will_create_files.remove(&uri);
+            }
         }
         self.render_cache.flush();
     }
 
     fn will_rename_files(&mut self, params: &RenameFilesParams) {
         for file in &params.files {
-            self.will_create_files
-                .insert(Url::from_str(&file.new_uri).unwrap());
+            let uri = Url::from_str(&file.new_uri).unwrap();
+            if Renderer::is_uri_valid(&uri) {
+                self.will_create_files
+                    .insert(Url::from_str(&file.new_uri).unwrap());
+            }
         }
     }
 
@@ -221,14 +229,18 @@ impl Render for Renderer {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let old_uri = Url::from_str(&file.old_uri).unwrap();
-            self.render_cache
-                .remove_node(&old_uri, &root_uri, &target_root_uri);
+            if Renderer::is_uri_valid(&old_uri) {
+                self.render_cache
+                    .remove_node(&old_uri, &root_uri, &target_root_uri);
+            }
 
             let new_uri = Url::from_str(&file.new_uri).unwrap();
-            self.create_node(&new_uri).await;
-            self.render_cache
-                .render_node(&new_uri, &root_uri, &target_root_uri);
-            self.will_create_files.remove(&new_uri);
+            if Renderer::is_uri_valid(&new_uri) {
+                self.create_node(&new_uri).await;
+                self.render_cache
+                    .render_node(&new_uri, &root_uri, &target_root_uri);
+                self.will_create_files.remove(&new_uri);
+            }
         }
         self.render_cache.flush();
     }
@@ -237,8 +249,10 @@ impl Render for Renderer {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let uri = Url::from_str(&file.uri).unwrap();
-            self.render_cache
-                .remove_node(&uri, &root_uri, &target_root_uri);
+            if Renderer::is_uri_valid(&uri) {
+                self.render_cache
+                    .remove_node(&uri, &root_uri, &target_root_uri);
+            }
         }
     }
 }
