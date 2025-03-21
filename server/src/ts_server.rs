@@ -296,24 +296,26 @@ impl TsServer {
                     let line = line.unwrap().as_number().unwrap().as_u64().unwrap() as u32 - 1;
                     let offset = offset.unwrap().as_number().unwrap().as_u64().unwrap() as u32 - 1;
                     let document = renderer.get_document(&original_uri).unwrap();
-                    let text = document.get_content(Some(Range {
-                        start: Position {
-                            line,
-                            character: offset - 5,
-                        },
-                        end: Position {
-                            line,
-                            character: offset,
-                        },
-                    }));
-                    if text == "this."
-                        && result
-                            .insert_text
-                            .as_ref()
-                            .is_some_and(|v| v.starts_with("this."))
-                    {
-                        result.insert_text =
-                            Some(result.insert_text.as_ref().unwrap()[5..].to_string());
+                    if offset >= 5 {
+                        let text = document.get_content(Some(Range {
+                            start: Position {
+                                line,
+                                character: offset - 5,
+                            },
+                            end: Position {
+                                line,
+                                character: offset,
+                            },
+                        }));
+                        if text == "this."
+                            && result
+                                .insert_text
+                                .as_ref()
+                                .is_some_and(|v| v.starts_with("this."))
+                        {
+                            result.insert_text =
+                                Some(result.insert_text.as_ref().unwrap()[5..].to_string());
+                        }
                     }
                 }
             }
