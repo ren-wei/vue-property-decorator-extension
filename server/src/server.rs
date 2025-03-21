@@ -124,6 +124,7 @@ impl LanguageServer for VueLspServer {
                     version: Some("1.0.0".to_string()),
                 }),
                 capabilities: ServerCapabilities {
+                    position_encoding: result.capabilities.position_encoding,
                     text_document_sync: Some(TextDocumentSyncCapability::Kind(
                         TextDocumentSyncKind::INCREMENTAL,
                     )),
@@ -187,6 +188,9 @@ impl LanguageServer for VueLspServer {
         let renderer = Arc::clone(&self.renderer);
         let text_documents = Arc::clone(&self.text_documents);
         let ts_server = Arc::clone(&self.ts_server);
+        {
+            renderer.lock().await.did_open(&uri).await;
+        }
         tokio::spawn(async move {
             loop {
                 let is_wait = {
@@ -199,15 +203,15 @@ impl LanguageServer for VueLspServer {
                     break;
                 }
             }
-            debug!("lock text_documents await");
+            debug!("did_open:lock text_documents await");
             let text_documents = text_documents.lock().await;
-            debug!("lock text_documents");
+            debug!("did_open:lock text_documents");
             let document = text_documents.get_document(&uri).unwrap();
-            debug!("lock ts_server await");
+            debug!("did_open:lock ts_server await");
             let mut ts_server = ts_server.write().await;
-            debug!("lock ts_server");
+            debug!("did_open:lock ts_server");
             ts_server.did_open(&uri, document).await;
-            info!("done {:?}", start_time.elapsed());
+            info!("did_open:done {:?}", start_time.elapsed());
         });
     }
 
@@ -269,8 +273,12 @@ impl LanguageServer for VueLspServer {
         Ok(None)
     }
 
+    #[instrument]
     async fn did_create_files(&self, params: CreateFilesParams) {
+        debug!("start");
+        let start_time = time::Instant::now();
         self.renderer.lock().await.did_create_files(params).await;
+        debug!("done: {:?}", start_time.elapsed());
     }
 
     async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
@@ -285,8 +293,12 @@ impl LanguageServer for VueLspServer {
         self.renderer.lock().await.did_rename_files(params).await;
     }
 
+    #[instrument]
     async fn did_delete_files(&self, params: DeleteFilesParams) {
+        debug!("start");
+        let start_time = time::Instant::now();
         self.renderer.lock().await.did_delete_files(params).await;
+        debug!("done: {:?}", start_time.elapsed());
     }
 
     #[instrument]

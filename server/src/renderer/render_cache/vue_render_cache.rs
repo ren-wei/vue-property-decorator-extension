@@ -2,6 +2,7 @@ use html_languageservice::{html_data::Description, parser::html_document::Node};
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent};
+use tracing::debug;
 
 use crate::{
     lazy::REG_SINGLE_BRACKET,
@@ -43,9 +44,9 @@ impl VueRenderCache {
         document: &FullTextDocument,
     ) -> Option<RenderCacheUpdateResult> {
         let range = change.range.unwrap();
-        let range_length = change.range_length.unwrap() as usize;
         let range_start = self.document.offset_at(range.start) as usize;
         let range_end = self.document.offset_at(range.end) as usize;
+        let range_length = range_end - range_start;
         // 如果变更处于 style，那么 range 位置向下移动一行
         let style_range = Range {
             start: Position {
@@ -124,7 +125,7 @@ impl VueRenderCache {
                                 text: self.template_compile_result.clone(),
                             },
                         ],
-                        is_change_prop: false,
+                        is_change: false,
                         extends_component: None,
                         registers: None,
                         transfers: None,
@@ -145,7 +146,7 @@ impl VueRenderCache {
                                 ),
                             },
                         ],
-                        is_change_prop: false,
+                        is_change: false,
                         extends_component: None,
                         registers: None,
                         transfers: None,
@@ -170,9 +171,10 @@ impl VueRenderCache {
                     &self.safe_update_range,
                     &change.text,
                 ) {
+                    debug!("safe_update");
                     return Some(RenderCacheUpdateResult {
                         changes: vec![change],
-                        is_change_prop: false,
+                        is_change: false,
                         extends_component: None,
                         registers: None,
                         transfers: None,
@@ -191,12 +193,15 @@ impl VueRenderCache {
                         script.start_tag_end.unwrap(),
                         script.end_tag_start.unwrap(),
                     ) {
+                        debug!("parse_script success");
                         // 尝试`解析脚本` 成功
+                        let mut is_change = false;
                         self.render_insert_offset = render_insert_offset;
                         self.name_range = (name_span.lo.to_usize(), name_span.hi.to_usize());
+                        is_change = is_change || self.description != description;
                         self.description = description;
 
-                        let is_change_prop = self.props != props;
+                        is_change = is_change || self.props != props;
                         let old_props_length = self.props.join(",").len() as u32;
                         self.props = props;
 
@@ -223,17 +228,18 @@ impl VueRenderCache {
                                     text: self.props.join(","),
                                 },
                             ],
-                            is_change_prop,
+                            is_change,
                             extends_component,
                             registers: Some(registers),
                             transfers: None,
                         });
                     } else {
+                        debug!("parse_script fail");
                         // 解析失败
                         self.safe_update_range = vec![];
                         return Some(RenderCacheUpdateResult {
                             changes: vec![change],
-                            is_change_prop: false,
+                            is_change: false,
                             extends_component: None,
                             registers: None,
                             transfers: None,
@@ -263,7 +269,7 @@ impl VueRenderCache {
                         text: combined_rendered_results::get_fill_space_source(&change.text, 0, 0),
                     },
                 ],
-                is_change_prop: false,
+                is_change: false,
                 extends_component: None,
                 registers: None,
                 transfers: None,
@@ -969,6 +975,54 @@ mod tests {
             range_length: Some(0),
             text: "private prop5 = 1;\n".to_string(),
         }]);
+    }
+
+    #[test]
+    fn script_add_utf8_char() {
+        assert_update(&[
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 14,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 14,
+                        character: 0,
+                    },
+                }),
+                range_length: Some(0),
+                text: "/** x */\n".to_string(),
+            },
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 14,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 14,
+                        character: 5,
+                    },
+                }),
+                range_length: Some(1),
+                text: "血".to_string(),
+            },
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 14,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 14,
+                        character: 5,
+                    },
+                }),
+                range_length: Some(1),
+                text: "".to_string(),
+            },
+        ]);
     }
 
     #[test]

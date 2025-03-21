@@ -9,7 +9,7 @@ use tower_lsp::lsp_types::{
     CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, RenameFilesParams,
     TextDocumentContentChangeEvent, Url,
 };
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 use walkdir::WalkDir;
 
 use super::{
@@ -34,6 +34,7 @@ pub trait Render {
     ) -> DidChangeTextDocumentParams;
     fn save(&self, uri: &Url);
     fn is_wait_create(&self, uri: &Url) -> bool;
+    async fn did_open(&mut self, uri: &Url);
     fn will_create_files(&mut self, params: &CreateFilesParams);
     async fn did_create_files(&mut self, did_create_files: CreateFilesParams);
     fn will_rename_files(&mut self, params: &RenameFilesParams);
@@ -138,7 +139,8 @@ impl Render for Renderer {
             let result = cache.update(params.content_changes[0].clone(), document);
             if let Some(result) = result {
                 // 更新影响的组件的版本
-                if result.is_change_prop {
+                debug!("is_change: {}", result.is_change);
+                if result.is_change {
                     self.render_cache.update_incoming_node_version(uri);
                 }
                 // 更新继承关系
@@ -190,6 +192,16 @@ impl Render for Renderer {
     /// 是否需要等待文件创建
     fn is_wait_create(&self, uri: &Url) -> bool {
         self.will_create_files.contains(uri)
+    }
+
+    /// 文件打开时检查节点是否存在，如果节点不存在，那么先创建节点
+    async fn did_open(&mut self, uri: &Url) {
+        if self.render_cache.get(uri).is_none() {
+            let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+            self.create_node(uri).await;
+            self.render_cache
+                .render_node(uri, &root_uri, &target_root_uri);
+        }
     }
 
     fn will_create_files(&mut self, params: &CreateFilesParams) {
@@ -249,7 +261,8 @@ impl Render for Renderer {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let uri = Url::from_str(&file.uri).unwrap();
-            if Renderer::is_uri_valid(&uri) {
+            if self.render_cache.get(&uri).is_some() {
+                self.render_cache.update_incoming_node_version(&uri);
                 self.render_cache
                     .remove_node(&uri, &root_uri, &target_root_uri);
             }

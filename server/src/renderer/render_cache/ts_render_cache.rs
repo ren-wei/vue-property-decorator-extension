@@ -45,7 +45,7 @@ impl TsRenderCache {
             });
             Some(RenderCacheUpdateResult {
                 changes: vec![change],
-                is_change_prop: true,
+                is_change: true,
                 extends_component: ts_component.3,
                 registers: Some(ts_component.4),
                 transfers: Some(result.transfers),
@@ -55,7 +55,7 @@ impl TsRenderCache {
             self.ts_component = None;
             Some(RenderCacheUpdateResult {
                 changes: vec![change],
-                is_change_prop,
+                is_change: is_change_prop,
                 extends_component: None,
                 registers: None,
                 transfers: Some(result.transfers),

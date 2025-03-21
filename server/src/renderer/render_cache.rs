@@ -10,7 +10,7 @@ use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
 use tokio::fs;
 use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Url};
-use tracing::error;
+use tracing::{debug, error};
 use ts_render_cache::TsRenderCache;
 use vue_render_cache::VueRenderCache;
 
@@ -119,7 +119,9 @@ impl RenderCacheGraph {
         for edge in edges {
             nodes.push(edge.source());
         }
+        debug!("update_incoming_node_version: {}", nodes.len());
         for node in nodes {
+            debug!("update version: {}", self.get_node_uri(node).path());
             let cache = self.graph.node_weight_mut(node).unwrap();
             cache.update_version();
         }
@@ -162,6 +164,7 @@ impl RenderCacheGraph {
                 let uri = self.get_node_uri(node);
                 let content = self.get_node_render_content(uri).unwrap();
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
+                debug!("render_node: {}", target_path.to_string_lossy());
                 tokio::spawn(async {
                     fs::write(target_path, content).await.unwrap();
                 });
@@ -423,7 +426,7 @@ impl RenderCache {
                 error!("lib update: {} {:?}", lib_cache.name, change);
                 Some(RenderCacheUpdateResult {
                     changes: vec![change],
-                    is_change_prop: false,
+                    is_change: false,
                     extends_component: None,
                     registers: None,
                     transfers: None,
@@ -448,8 +451,8 @@ impl RenderCache {
 pub struct RenderCacheUpdateResult {
     /// 渲染内容的变更
     pub changes: Vec<TextDocumentContentChangeEvent>,
-    /// 属性是否更新
-    pub is_change_prop: bool,
+    /// 更新是否影响其他组件
+    pub is_change: bool,
     /// 继承组件如果更新，返回更新后的继承组件
     pub extends_component: Option<ExtendsComponent>,
     /// 注册关系如果更新，返回更新后的注册关系

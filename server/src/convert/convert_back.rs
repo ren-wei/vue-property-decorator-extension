@@ -387,6 +387,9 @@ impl ConvertBack for Vec<SemanticToken> {
         let renderer = options.renderer.unwrap();
         // 从 render_insert_offset 分断，后面的移到前面，重新计算前面部分的位置，以及后面部分第一个 token 的位置
         if let Some(render_insert_offset) = renderer.get_render_insert_offset(uri) {
+            if render_insert_offset == 0 {
+                return self;
+            }
             let document = renderer.get_document(uri).unwrap();
             let pos = document.position_at(render_insert_offset as u32 + 1);
 
