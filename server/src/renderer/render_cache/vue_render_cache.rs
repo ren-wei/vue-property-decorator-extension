@@ -41,7 +41,6 @@ impl VueRenderCache {
     pub fn update(
         &mut self,
         change: TextDocumentContentChangeEvent,
-        document: &FullTextDocument,
     ) -> Option<RenderCacheUpdateResult> {
         let range = change.range.unwrap();
         let range_start = self.document.offset_at(range.start) as usize;
@@ -61,7 +60,7 @@ impl VueRenderCache {
         // 更新缓存文档
         self.document
             .update(&[change.clone()], self.document.version() + 1);
-        let source = document.get_content(None);
+        let source = &self.document.get_content(None).to_string();
         // 节点需要增加的偏移量
         let incremental = change.text.len() as isize - range_length as isize;
         // 1. 如果变更处于 template 节点
@@ -79,10 +78,10 @@ impl VueRenderCache {
             if is_in_template {
                 // 重新解析 template 节点
                 let node = parse_document::parse_as_node(
-                    document,
+                    &self.document,
                     Some(Range::new(
-                        document.position_at(template.start as u32),
-                        document.position_at(template.end as u32),
+                        self.document.position_at(template.start as u32),
+                        self.document.position_at(template.end as u32),
                     )),
                 );
 
@@ -515,7 +514,7 @@ mod tests {
         // update
         for (i, change) in changes.iter().enumerate() {
             document.update(&[change.clone()], i as i32 + 1);
-            let render_changes = cache.update(change.clone(), &document).unwrap().changes;
+            let render_changes = cache.update(change.clone()).unwrap().changes;
             let render_result = get_render_content(&cache);
 
             // old_render_result + changes = render_result

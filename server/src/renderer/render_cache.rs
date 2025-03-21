@@ -422,7 +422,7 @@ impl RenderCache {
         document: &FullTextDocument,
     ) -> Option<RenderCacheUpdateResult> {
         match self {
-            RenderCache::VueRenderCache(vue_cache) => vue_cache.update(change, document),
+            RenderCache::VueRenderCache(vue_cache) => vue_cache.update(change),
             RenderCache::TsRenderCache(ts_cache) => ts_cache.update(change, document),
             RenderCache::LibRenderCache(lib_cache) => {
                 error!("lib update: {} {:?}", lib_cache.name, change);

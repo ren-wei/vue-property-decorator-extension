@@ -116,28 +116,11 @@ impl Render for Renderer {
         params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) -> DidChangeTextDocumentParams {
-        if params.content_changes.len() > 1 {
-            self.render_cache.remove_outgoing_edge(uri);
-            self.create_node(uri).await;
-            self.render_cache.flush();
-            // 更新影响的组件
-            self.render_cache.update_incoming_node_version(uri);
-            if let Some(content) = self.render_cache.get_node_render_content(uri) {
-                DidChangeTextDocumentParams {
-                    text_document: params.text_document,
-                    content_changes: vec![TextDocumentContentChangeEvent {
-                        range: None,
-                        range_length: None,
-                        text: content,
-                    }],
-                }
-            } else {
-                params
-            }
-        } else {
+        let mut content_changes = vec![];
+        for change in &params.content_changes {
             let cache = self.render_cache.get_mut(uri).unwrap();
-            let result = cache.update(params.content_changes[0].clone(), document);
-            if let Some(result) = result {
+            let result = cache.update(change.clone(), document);
+            if let Some(mut result) = result {
                 // 更新影响的组件的版本
                 debug!("is_change: {}", result.is_change);
                 if result.is_change {
@@ -158,28 +141,41 @@ impl Render for Renderer {
                     self.render_cache.remove_transfers_edges(uri);
                     self.create_transfers_relation(uri, transfers);
                 }
-                DidChangeTextDocumentParams {
-                    text_document: params.text_document,
-                    content_changes: result.changes,
-                }
+                content_changes.append(&mut result.changes);
             } else {
                 // 重新解析节点
                 self.render_cache.remove_outgoing_edge(uri);
-                self.create_node(uri).await;
+                self.create_node_from_document(
+                    uri,
+                    FullTextDocument::new(
+                        document.language_id().to_string(),
+                        self.render_cache
+                            .get(uri)
+                            .unwrap()
+                            .get_version()
+                            .unwrap_or(document.version()),
+                        document.get_content(None).to_string(),
+                    ),
+                )
+                .await;
                 self.render_cache.flush();
                 if let Some(content) = self.render_cache.get_node_render_content(uri) {
-                    DidChangeTextDocumentParams {
+                    return DidChangeTextDocumentParams {
                         text_document: params.text_document,
                         content_changes: vec![TextDocumentContentChangeEvent {
                             range: None,
                             range_length: None,
                             text: content,
                         }],
-                    }
+                    };
                 } else {
-                    params
+                    return params;
                 }
             }
+        }
+        DidChangeTextDocumentParams {
+            text_document: params.text_document,
+            content_changes,
         }
     }
 
@@ -379,18 +375,27 @@ impl Renderer {
     /// * 如果是 ts 文件，那么创建 ts 节点
     /// * 如果都不是或者创建失败，那么创建 Unknown 节点
     async fn create_node(&mut self, uri: &Url) {
+        let document = Renderer::get_document_from_file(uri).await.unwrap();
         if Renderer::is_vue_component(uri) {
-            self.create_vue_node(uri).await;
+            self.create_vue_node(uri, document).await;
         } else {
-            self.create_ts_node(uri).await;
+            self.create_ts_node(uri, document).await;
+        }
+    }
+
+    /// 创建节点及相关的边
+    async fn create_node_from_document(&mut self, uri: &Url, document: FullTextDocument) {
+        if Renderer::is_vue_component(uri) {
+            self.create_vue_node(uri, document).await;
+        } else {
+            self.create_ts_node(uri, document).await;
         }
     }
 
     /// 创建 vue 节点
     /// * 如果存在继承关系，那么创建继承边
     /// * 如果存在注册关系，那么创建注册边
-    async fn create_vue_node(&mut self, uri: &Url) {
-        let document = Renderer::get_document_from_file(uri).await.unwrap();
+    async fn create_vue_node(&mut self, uri: &Url, document: FullTextDocument) {
         let result = vue_render_cache::parse_vue_file(&document);
         self.render_cache.add_node(
             uri,
@@ -416,8 +421,7 @@ impl Renderer {
     /// * 如果存在组件并且存在继承关系，那么创建继承边
     /// * 如果存在组件并且存在注册关系，那么创建注册边
     /// * 创建节点间中转关系
-    async fn create_ts_node(&mut self, uri: &Url) {
-        let document = Renderer::get_document_from_file(uri).await.unwrap();
+    async fn create_ts_node(&mut self, uri: &Url, document: FullTextDocument) {
         let result = ts_render_cache::parse_ts_file(&document);
         let mut ts_component = None;
         if let Some((name_range, description, props, extends_component, registers)) =
