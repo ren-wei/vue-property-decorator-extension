@@ -466,6 +466,7 @@ impl LanguageServer for VueLspServer {
         completion
     }
 
+    #[instrument]
     async fn completion_resolve(&self, mut params: CompletionItem) -> Result<CompletionItem> {
         /// 判断是否来自 ts_server 并且移除标记，返回原始 uri
         fn get_original_uri(params: &mut CompletionItem) -> Option<Value> {

@@ -271,7 +271,41 @@ impl TsServer {
             uri: Some(&original_uri),
             renderer: Some(&renderer),
         };
-        result.convert_back(options).await
+
+        // 处理 "this." 后面补全多了 "this." 的问题
+        let mut result = result.convert_back(options).await?;
+        if let Some(data) = &result.data {
+            if data.is_object() {
+                let data = data.as_object().unwrap();
+                let line = data.get("line");
+                let offset = data.get("offset");
+                if line.is_some() && offset.is_some() {
+                    let line = line.unwrap().as_number().unwrap().as_u64().unwrap() as u32 - 1;
+                    let offset = offset.unwrap().as_number().unwrap().as_u64().unwrap() as u32 - 1;
+                    let document = renderer.get_document(&original_uri).unwrap();
+                    let text = document.get_content(Some(Range {
+                        start: Position {
+                            line,
+                            character: offset - 5,
+                        },
+                        end: Position {
+                            line,
+                            character: offset,
+                        },
+                    }));
+                    if text == "this."
+                        && result
+                            .insert_text
+                            .as_ref()
+                            .is_some_and(|v| v.starts_with("this."))
+                    {
+                        result.insert_text =
+                            Some(result.insert_text.as_ref().unwrap()[5..].to_string());
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 
     pub async fn goto_definition(
