@@ -11,6 +11,9 @@ use serde_json::{json, Value};
 use std::time;
 use tokio::sync::{Mutex, RwLock};
 use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::notification::{
+    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification,
+};
 use tower_lsp::lsp_types::{
     CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
     CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
@@ -180,7 +183,7 @@ impl LanguageServer for VueLspServer {
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
             text_documents.listen(
-                "textDocument/didOpen",
+                DidOpenTextDocument::METHOD,
                 &serde_json::to_value(&params).unwrap(),
             );
         }
@@ -225,7 +228,7 @@ impl LanguageServer for VueLspServer {
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
             text_documents.listen(
-                "textDocument/didChange",
+                DidChangeTextDocument::METHOD,
                 &serde_json::to_value(&params).unwrap(),
             );
         }
@@ -249,7 +252,7 @@ impl LanguageServer for VueLspServer {
         if !self.is_shared {
             let mut text_documents = self.text_documents.lock().await;
             text_documents.listen(
-                "textDocument/didClose",
+                DidCloseTextDocument::METHOD,
                 &serde_json::to_value(&params).unwrap(),
             );
         }
