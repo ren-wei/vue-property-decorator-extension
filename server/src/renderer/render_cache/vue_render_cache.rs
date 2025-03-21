@@ -20,8 +20,8 @@ pub struct VueRenderCache {
     /// 渲染前的文档，与文件系统中相同
     pub document: FullTextDocument,
     // 解析文档
-    pub template: Node,
-    pub script: Node,
+    pub template: Option<Node>,
+    pub script: Option<Node>,
     pub style: Vec<Node>,
     // 解析模版
     pub name_range: (usize, usize),
@@ -64,159 +64,112 @@ impl VueRenderCache {
         // 节点需要增加的偏移量
         let incremental = change.text.len() as isize - range_length as isize;
         // 1. 如果变更处于 template 节点
-        if self.template.start < range_start && range_end < self.template.end {
+        let mut is_in_template = false;
+        if self
+            .template
+            .as_ref()
+            .is_some_and(|t| t.start < range_start && range_end < t.end)
+        {
             // 位移
             self.move_offset(range_start, incremental);
-            // 重新解析 template 节点
-            let node = parse_document::parse_as_node(
-                document,
-                Some(Range::new(
-                    document.position_at(self.template.start as u32),
-                    document.position_at(self.template.end as u32),
-                )),
-            );
-
-            if let Some(node) = node {
-                self.template = node;
-                // 进行模版编译
-                let (template_compile_result, mapping) =
-                    template_compile::template_compile(&self.template, source);
-                let old_template_compile_result = self.template_compile_result.clone();
-                self.template_compile_result = template_compile_result;
-                self.mapping = mapping;
-                // template_compile_result 插入的行
-                let line = self
-                    .document
-                    .position_at(self.render_insert_offset as u32 + 1)
-                    .line
-                    + 1; // template_compile_result 前有换行
-                return Some(RenderCacheUpdateResult {
-                    changes: vec![
-                        // 模版对应位置填充空格
-                        TextDocumentContentChangeEvent {
-                            range: change.range,
-                            range_length: change.range_length,
-                            text: combined_rendered_results::get_fill_space_source(
-                                &change.text,
-                                0,
-                                0,
-                            ),
-                        },
-                        // 替换 template_compile_result
-                        TextDocumentContentChangeEvent {
-                            range: Some(Range {
-                                start: Position { line, character: 0 },
-                                end: Position {
-                                    line,
-                                    character: old_template_compile_result.len() as u32,
-                                },
-                            }),
-                            range_length: Some(old_template_compile_result.len() as u32),
-                            text: self.template_compile_result.clone(),
-                        },
-                    ],
-                    is_change_prop: false,
-                    extends_component: None,
-                    registers: None,
-                    transfers: None,
-                });
-            } else {
-                self.template.end = (self.template.end as isize + incremental) as usize;
-                // template 节点解析失败，将变更内容转换为空格后输出
-                return Some(RenderCacheUpdateResult {
-                    changes: vec![
-                        // 模版对应位置填充空格
-                        TextDocumentContentChangeEvent {
-                            range: change.range,
-                            range_length: change.range_length,
-                            text: combined_rendered_results::get_fill_space_source(
-                                &change.text,
-                                0,
-                                0,
-                            ),
-                        },
-                    ],
-                    is_change_prop: false,
-                    extends_component: None,
-                    registers: None,
-                    transfers: None,
-                });
-            }
+            is_in_template = true;
         }
-        // 2. 如果变更处于 script 节点
-        if self.script.start_tag_end.is_some_and(|v| v <= range_start)
-            && self.script.end_tag_start.is_some_and(|v| range_end < v)
-        {
-            // 如果可以安全更新，那么直接修改 render_insert_offset 后返回
-            if is_safe_update(
-                range_start,
-                range_end,
-                &mut self.safe_update_range,
-                &change.text,
-            ) {
-                self.move_offset(range_start, incremental);
-                return Some(RenderCacheUpdateResult {
-                    changes: vec![change],
-                    is_change_prop: false,
-                    extends_component: None,
-                    registers: None,
-                    transfers: None,
-                });
-            } else {
-                self.move_offset(range_start, incremental);
-                if let Some(ParseScriptResult {
-                    name_span,
-                    description,
-                    props,
-                    render_insert_offset,
-                    extends_component,
-                    registers,
-                    safe_update_range,
-                }) = parse_script::parse_script(
-                    source,
-                    self.script.start_tag_end.unwrap(),
-                    self.script.end_tag_start.unwrap(),
-                ) {
-                    // 尝试`解析脚本` 成功
-                    self.render_insert_offset = render_insert_offset;
-                    self.name_range = (name_span.lo.to_usize(), name_span.hi.to_usize());
-                    self.description = description;
+        if let Some(template) = &mut self.template {
+            if is_in_template {
+                // 重新解析 template 节点
+                let node = parse_document::parse_as_node(
+                    document,
+                    Some(Range::new(
+                        document.position_at(template.start as u32),
+                        document.position_at(template.end as u32),
+                    )),
+                );
 
-                    let is_change_prop = self.props != props;
-                    let old_props_length = self.props.join(",").len() as u32;
-                    self.props = props;
-
-                    self.safe_update_range = safe_update_range;
-                    let Position { line, character } = self
+                if let Some(node) = node {
+                    *template = node;
+                    // 进行模版编译
+                    let (template_compile_result, mapping) =
+                        template_compile::template_compile(&template, source);
+                    let old_template_compile_result = self.template_compile_result.clone();
+                    self.template_compile_result = template_compile_result;
+                    self.mapping = mapping;
+                    // template_compile_result 插入的行
+                    let line = self
                         .document
-                        .position_at(self.render_insert_offset as u32 + 1);
+                        .position_at(self.render_insert_offset as u32 + 1)
+                        .line
+                        + 1; // template_compile_result 前有换行
                     return Some(RenderCacheUpdateResult {
                         changes: vec![
-                            change,
-                            // 属性变更
+                            // 模版对应位置填充空格
+                            TextDocumentContentChangeEvent {
+                                range: change.range,
+                                range_length: change.range_length,
+                                text: combined_rendered_results::get_fill_space_source(
+                                    &change.text,
+                                    0,
+                                    0,
+                                ),
+                            },
+                            // 替换 template_compile_result
                             TextDocumentContentChangeEvent {
                                 range: Some(Range {
-                                    start: Position {
-                                        line,
-                                        character: character + 23,
-                                    },
+                                    start: Position { line, character: 0 },
                                     end: Position {
                                         line,
-                                        character: character + 23 + old_props_length,
+                                        character: old_template_compile_result.len() as u32,
                                     },
                                 }),
-                                range_length: Some(old_props_length),
-                                text: self.props.join(","),
+                                range_length: Some(old_template_compile_result.len() as u32),
+                                text: self.template_compile_result.clone(),
                             },
                         ],
-                        is_change_prop,
-                        extends_component,
-                        registers: Some(registers),
+                        is_change_prop: false,
+                        extends_component: None,
+                        registers: None,
                         transfers: None,
                     });
                 } else {
-                    // 解析失败
-                    self.safe_update_range = vec![];
+                    template.end = (template.end as isize + incremental) as usize;
+                    // template 节点解析失败，将变更内容转换为空格后输出
+                    return Some(RenderCacheUpdateResult {
+                        changes: vec![
+                            // 模版对应位置填充空格
+                            TextDocumentContentChangeEvent {
+                                range: change.range,
+                                range_length: change.range_length,
+                                text: combined_rendered_results::get_fill_space_source(
+                                    &change.text,
+                                    0,
+                                    0,
+                                ),
+                            },
+                        ],
+                        is_change_prop: false,
+                        extends_component: None,
+                        registers: None,
+                        transfers: None,
+                    });
+                }
+            }
+        }
+        // 2. 如果变更处于 script 节点
+        let mut is_in_script = false;
+        if self.script.as_ref().is_some_and(|s| {
+            s.start_tag_end.unwrap() <= range_start && range_end < s.end_tag_start.unwrap()
+        }) {
+            self.move_offset(range_start, incremental);
+            is_in_script = true;
+        }
+        if let Some(script) = &self.script {
+            if is_in_script {
+                // 如果可以安全更新，那么直接修改 render_insert_offset 后返回
+                if is_safe_update(
+                    range_start,
+                    range_end,
+                    &self.safe_update_range,
+                    &change.text,
+                ) {
                     return Some(RenderCacheUpdateResult {
                         changes: vec![change],
                         is_change_prop: false,
@@ -224,6 +177,68 @@ impl VueRenderCache {
                         registers: None,
                         transfers: None,
                     });
+                } else {
+                    if let Some(ParseScriptResult {
+                        name_span,
+                        description,
+                        props,
+                        render_insert_offset,
+                        extends_component,
+                        registers,
+                        safe_update_range,
+                    }) = parse_script::parse_script(
+                        source,
+                        script.start_tag_end.unwrap(),
+                        script.end_tag_start.unwrap(),
+                    ) {
+                        // 尝试`解析脚本` 成功
+                        self.render_insert_offset = render_insert_offset;
+                        self.name_range = (name_span.lo.to_usize(), name_span.hi.to_usize());
+                        self.description = description;
+
+                        let is_change_prop = self.props != props;
+                        let old_props_length = self.props.join(",").len() as u32;
+                        self.props = props;
+
+                        self.safe_update_range = safe_update_range;
+                        let Position { line, character } = self
+                            .document
+                            .position_at(self.render_insert_offset as u32 + 1);
+                        return Some(RenderCacheUpdateResult {
+                            changes: vec![
+                                change,
+                                // 属性变更
+                                TextDocumentContentChangeEvent {
+                                    range: Some(Range {
+                                        start: Position {
+                                            line,
+                                            character: character + 23,
+                                        },
+                                        end: Position {
+                                            line,
+                                            character: character + 23 + old_props_length,
+                                        },
+                                    }),
+                                    range_length: Some(old_props_length),
+                                    text: self.props.join(","),
+                                },
+                            ],
+                            is_change_prop,
+                            extends_component,
+                            registers: Some(registers),
+                            transfers: None,
+                        });
+                    } else {
+                        // 解析失败
+                        self.safe_update_range = vec![];
+                        return Some(RenderCacheUpdateResult {
+                            changes: vec![change],
+                            is_change_prop: false,
+                            extends_component: None,
+                            registers: None,
+                            transfers: None,
+                        });
+                    }
                 }
             }
         }
@@ -289,9 +304,13 @@ impl VueRenderCache {
             }
         }
         // 移动 template
-        move_node(&mut self.template, offset, incremental);
+        if let Some(template) = &mut self.template {
+            move_node(template, offset, incremental);
+        }
         // 移动 script
-        move_node(&mut self.script, offset, incremental);
+        if let Some(script) = &mut self.script {
+            move_node(script, offset, incremental);
+        }
         // 移动 style
         for style in &mut self.style {
             move_node(style, offset, incremental);
@@ -326,49 +345,50 @@ impl VueRenderCache {
 }
 
 /// 解析 vue 组件
-pub fn parse_vue_file(document: &FullTextDocument) -> Option<ParseVueFileResult> {
+pub fn parse_vue_file(document: &FullTextDocument) -> ParseVueFileResult {
     // 解析文档
     let (template, script, style) = parse_document::parse_document(&document);
 
-    let template = template?;
-    let script = script?;
     let source = document.get_content(None);
-    // 解析脚本
-    let ParseScriptResult {
-        name_span,
-        description,
-        props,
-        render_insert_offset,
-        extends_component,
-        registers,
-        safe_update_range,
-    } = parse_script::parse_script(
-        source,
-        script.start_tag_end.unwrap(),
-        script.end_tag_start.unwrap(),
-    )?;
-    // 模版编译
-    let (template_compile_result, mapping) = template_compile::template_compile(&template, source);
+    let mut parse_script_result = None;
+    if let Some(script) = &script {
+        // 解析脚本
+        parse_script_result = parse_script::parse_script(
+            source,
+            script.start_tag_end.unwrap(),
+            script.end_tag_start.unwrap(),
+        );
+    }
+    let result = parse_script_result.unwrap_or_default();
+    let mut template_compile_result = "".to_string();
+    let mut mapping = vec![];
+    if let Some(template) = &template {
+        // 模版编译
+        (template_compile_result, mapping) = template_compile::template_compile(&template, source);
+    }
 
-    Some(ParseVueFileResult {
+    ParseVueFileResult {
         template,
         script,
         style,
-        name_range: (name_span.lo.to_usize(), name_span.hi.to_usize()),
-        description,
-        props,
-        render_insert_offset,
+        name_range: (
+            result.name_span.lo.to_usize(),
+            result.name_span.hi.to_usize(),
+        ),
+        description: result.description,
+        props: result.props,
+        render_insert_offset: result.render_insert_offset,
         template_compile_result,
         mapping,
-        extends_component,
-        registers,
-        safe_update_range,
-    })
+        extends_component: result.extends_component,
+        registers: result.registers,
+        safe_update_range: result.safe_update_range,
+    }
 }
 
 pub struct ParseVueFileResult {
-    pub template: Node,
-    pub script: Node,
+    pub template: Option<Node>,
+    pub script: Option<Node>,
     pub style: Vec<Node>,
     pub name_range: (usize, usize),
     pub description: Option<Description>,
@@ -387,7 +407,7 @@ pub struct ParseVueFileResult {
 fn is_safe_update(
     range_start: usize,
     range_end: usize,
-    safe_update_range: &mut Vec<(usize, usize)>,
+    safe_update_range: &Vec<(usize, usize)>,
     text: &str,
 ) -> bool {
     // 如果 text 包含单独的大括号，那么返回 false
@@ -523,16 +543,21 @@ mod tests {
     fn create_vue_render_cache(document: &FullTextDocument) -> VueRenderCache {
         let source = document.get_content(None);
         let (template, script, style) = parse_document::parse_document(&document);
-        let template = template.unwrap();
-        let script = script.unwrap();
-        let result = parse_script::parse_script(
-            source,
-            script.start_tag_end.unwrap(),
-            script.end_tag_start.unwrap(),
-        )
-        .unwrap();
-        let (template_compile_result, mapping) =
-            template_compile::template_compile(&template, source);
+        let mut result = None;
+        if let Some(script) = &script {
+            result = parse_script::parse_script(
+                source,
+                script.start_tag_end.unwrap(),
+                script.end_tag_start.unwrap(),
+            );
+        }
+        let result = result.unwrap_or_default();
+        let mut template_compile_result = String::new();
+        let mut mapping = vec![];
+        if let Some(template) = &template {
+            (template_compile_result, mapping) =
+                template_compile::template_compile(&template, source);
+        }
         VueRenderCache {
             document: FullTextDocument::new(
                 document.language_id().to_string(),
@@ -556,14 +581,18 @@ mod tests {
     }
 
     fn get_render_content(cache: &VueRenderCache) -> String {
-        combined_rendered_results::combined_rendered_results(
-            cache.script.start_tag_end.unwrap(),
-            cache.script.end_tag_start.unwrap(),
-            &cache.template_compile_result,
-            &cache.props,
-            cache.render_insert_offset,
-            cache.document.get_content(None),
-        )
+        if let Some(script) = &cache.script {
+            combined_rendered_results::combined_rendered_results(
+                script.start_tag_end.unwrap(),
+                script.end_tag_start.unwrap(),
+                &cache.template_compile_result,
+                &cache.props,
+                cache.render_insert_offset,
+                cache.document.get_content(None),
+            )
+        } else {
+            String::new()
+        }
     }
 
     #[test]

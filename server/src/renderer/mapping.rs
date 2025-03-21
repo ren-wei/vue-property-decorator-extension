@@ -11,7 +11,7 @@ pub trait Mapping {
     fn get_original_range(&self, uri: &Url, range: &Range) -> Option<Range>;
     /// 获取文档位置映射后的位置，如果不在 template 表达式范围内，那么返回 None
     fn get_mapping_position(&self, uri: &Url, position: &Position) -> Option<Position>;
-    /// 获取 vue 组件所处位置的类型
+    /// 获取 vue 组件所处位置的类型，如果不是 vue 文件或者位置无效，返回 None
     fn get_position_type(&self, uri: &Url, position: &Position) -> Option<PositionType>;
 }
 
@@ -66,22 +66,23 @@ impl Mapping for Renderer {
         let cache = &self.render_cache[uri];
         if let RenderCache::VueRenderCache(cache) = cache {
             let offset = cache.document.offset_at(*position) as usize;
-            if cache.template.start < offset && offset < cache.template.end {
-                if let Some(pos) = self.get_mapping_position(uri, position) {
-                    Some(PositionType::TemplateExpr(pos))
-                } else {
-                    Some(PositionType::Template)
+            if let Some(template) = &cache.template {
+                if template.start < offset && offset < template.end {
+                    if let Some(pos) = self.get_mapping_position(uri, position) {
+                        return Some(PositionType::TemplateExpr(pos));
+                    } else {
+                        return Some(PositionType::Template);
+                    }
                 }
-            } else if cache.script.start_tag_end.unwrap() < offset
-                && offset < cache.script.end_tag_start.unwrap()
-            {
-                Some(PositionType::Script)
-            } else {
-                None
             }
-        } else {
-            None
+            if let Some(script) = &cache.script {
+                if script.start_tag_end.unwrap() < offset && offset < script.end_tag_start.unwrap()
+                {
+                    return Some(PositionType::Script);
+                }
+            }
         }
+        None
     }
 }
 

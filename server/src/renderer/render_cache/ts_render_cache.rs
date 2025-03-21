@@ -35,39 +35,30 @@ impl TsRenderCache {
         change: TextDocumentContentChangeEvent,
         document: &FullTextDocument,
     ) -> Option<RenderCacheUpdateResult> {
-        if let Some(result) = parse_ts_file(document) {
-            self.local_exports = result.local_exports;
-            if let Some(ts_component) = result.ts_component {
-                self.ts_component = Some(TsComponent {
-                    name_range: ts_component.0,
-                    description: ts_component.1,
-                    props: ts_component.2,
-                });
-                Some(RenderCacheUpdateResult {
-                    changes: vec![change],
-                    is_change_prop: true,
-                    extends_component: ts_component.3,
-                    registers: Some(ts_component.4),
-                    transfers: Some(result.transfers),
-                })
-            } else {
-                let is_change_prop = self.ts_component.is_some();
-                self.ts_component = None;
-                Some(RenderCacheUpdateResult {
-                    changes: vec![change],
-                    is_change_prop,
-                    extends_component: None,
-                    registers: None,
-                    transfers: Some(result.transfers),
-                })
-            }
-        } else {
+        let result = parse_ts_file(document);
+        self.local_exports = result.local_exports;
+        if let Some(ts_component) = result.ts_component {
+            self.ts_component = Some(TsComponent {
+                name_range: ts_component.0,
+                description: ts_component.1,
+                props: ts_component.2,
+            });
             Some(RenderCacheUpdateResult {
                 changes: vec![change],
-                is_change_prop: false,
+                is_change_prop: true,
+                extends_component: ts_component.3,
+                registers: Some(ts_component.4),
+                transfers: Some(result.transfers),
+            })
+        } else {
+            let is_change_prop = self.ts_component.is_some();
+            self.ts_component = None;
+            Some(RenderCacheUpdateResult {
+                changes: vec![change],
+                is_change_prop,
                 extends_component: None,
                 registers: None,
-                transfers: None,
+                transfers: Some(result.transfers),
             })
         }
     }
@@ -76,12 +67,16 @@ impl TsRenderCache {
 /// # 解析 ts 文件
 /// 如果 ts 文件默认导出组件，那么进行解析
 /// 如果不存在导入导出组件，那么返回 None
-pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
+pub fn parse_ts_file(document: &FullTextDocument) -> ParseTsFileResult {
     let source = document.get_content(None);
     let (module, comments) = ast::parse_source(source, 0, source.len());
     if let Err(e) = module {
         error!("parse_ts_file error: {:?}", e);
-        return None;
+        return ParseTsFileResult {
+            ts_component: None,
+            local_exports: vec![],
+            transfers: vec![],
+        };
     }
     let module = module.unwrap();
     let mut ts_component = None;
@@ -102,11 +97,11 @@ pub fn parse_ts_file(document: &FullTextDocument) -> Option<ParseTsFileResult> {
         ts_component = Some((name_range, description, props, extends_component, registers));
     }
     let (local_exports, transfers) = ast::get_local_exports_and_transfers(&module);
-    Some(ParseTsFileResult {
+    ParseTsFileResult {
         ts_component,
         local_exports,
         transfers,
-    })
+    }
 }
 
 /// # 从 ts 文件获取指定导出项

@@ -336,22 +336,18 @@ impl Renderer {
     /// * 如果都不是或者创建失败，那么创建 Unknown 节点
     async fn create_node(&mut self, uri: &Url) {
         if Renderer::is_vue_component(uri) {
-            if self.create_vue_node(uri).await.is_none() {
-                self.crate_unknown_node(uri);
-            }
+            self.create_vue_node(uri).await;
         } else {
-            if self.create_ts_node(uri).await.is_none() {
-                self.crate_unknown_node(uri);
-            }
+            self.create_ts_node(uri).await;
         }
     }
 
     /// 创建 vue 节点
     /// * 如果存在继承关系，那么创建继承边
     /// * 如果存在注册关系，那么创建注册边
-    async fn create_vue_node(&mut self, uri: &Url) -> Option<()> {
+    async fn create_vue_node(&mut self, uri: &Url) {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
-        let result = vue_render_cache::parse_vue_file(&document)?;
+        let result = vue_render_cache::parse_vue_file(&document);
         self.render_cache.add_node(
             uri,
             RenderCache::VueRenderCache(VueRenderCache {
@@ -370,16 +366,15 @@ impl Renderer {
         );
         self.create_extends_relation(uri, result.extends_component);
         self.create_registers_relation(uri, result.registers);
-        Some(())
     }
 
     /// 创建 ts 节点
     /// * 如果存在组件并且存在继承关系，那么创建继承边
     /// * 如果存在组件并且存在注册关系，那么创建注册边
     /// * 创建节点间中转关系
-    async fn create_ts_node(&mut self, uri: &Url) -> Option<()> {
+    async fn create_ts_node(&mut self, uri: &Url) {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
-        let result = ts_render_cache::parse_ts_file(&document)?;
+        let result = ts_render_cache::parse_ts_file(&document);
         let mut ts_component = None;
         if let Some((name_range, description, props, extends_component, registers)) =
             result.ts_component
@@ -400,12 +395,6 @@ impl Renderer {
             }),
         );
         self.create_transfers_relation(uri, result.transfers);
-        Some(())
-    }
-
-    fn crate_unknown_node(&mut self, uri: &Url) {
-        warn!("unknown node type: {}", uri.path());
-        self.render_cache.add_node(uri, RenderCache::Unknown);
     }
 
     async fn create_lib_node(&mut self, uri: &Url) {

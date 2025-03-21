@@ -125,6 +125,7 @@ pub struct RegisterComponent {
     pub path: String,
 }
 
+#[derive(Default)]
 pub struct ParseScriptResult {
     pub name_span: Span,
     pub description: Option<Description>,

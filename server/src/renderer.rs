@@ -68,7 +68,13 @@ impl Renderer {
     pub fn get_html_document(&self, uri: &Url) -> Option<HTMLDocument> {
         let cache = &self.render_cache[uri];
         if let RenderCache::VueRenderCache(cache) = cache {
-            let mut roots = vec![cache.template.clone(), cache.script.clone()];
+            let mut roots = vec![];
+            if let Some(template) = &cache.template {
+                roots.push(template.clone());
+            }
+            if let Some(script) = &cache.script {
+                roots.push(script.clone());
+            }
             roots.append(&mut cache.style.clone());
             Some(HTMLDocument { roots })
         } else {
@@ -111,7 +117,6 @@ impl Renderer {
                 })?;
                 return Some(component.name_location.clone());
             }
-            RenderCache::Unknown => Range::default(),
         };
         Some(Location {
             uri: registered_uri.clone(),
@@ -133,7 +138,7 @@ impl Renderer {
             Some(
                 cache
                     .document
-                    .position_at(cache.script.start_tag_end.unwrap() as u32),
+                    .position_at(cache.script.as_ref()?.start_tag_end.unwrap() as u32),
             )
         } else {
             None
@@ -147,7 +152,7 @@ impl Renderer {
             Some(
                 cache
                     .document
-                    .position_at(cache.script.end_tag_start.unwrap() as u32),
+                    .position_at(cache.script.as_ref()?.end_tag_start.unwrap() as u32),
             )
         } else {
             None

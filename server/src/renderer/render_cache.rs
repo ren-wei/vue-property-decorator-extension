@@ -149,12 +149,6 @@ impl RenderCacheGraph {
                 tokio::spawn(async {
                     fs::write(target_path, content).await.unwrap();
                 });
-            } else if let RenderCache::Unknown = cache {
-                let uri = self.get_node_uri(node);
-                let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
-                tokio::spawn(async {
-                    fs::write(target_path, "").await.unwrap();
-                });
             }
         }
     }
@@ -184,13 +178,6 @@ impl RenderCacheGraph {
                 }
             }
             RenderCache::LibRenderCache(_) => {}
-            RenderCache::Unknown => {
-                let uri = self.get_node_uri(node);
-                let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
-                tokio::spawn(async {
-                    fs::write(target_path, "").await.unwrap();
-                });
-            }
         }
     }
 
@@ -201,17 +188,21 @@ impl RenderCacheGraph {
         let node = *self.idx_map.get(uri).unwrap();
         let cache = &self.graph[node];
         if let RenderCache::VueRenderCache(cache) = cache {
-            // 获取继承组件的 props
-            let mut props = RenderCacheGraph::get_extends_props(&self.graph, node);
-            props.append(&mut cache.props.clone());
-            Some(combined_rendered_results::combined_rendered_results(
-                cache.script.start_tag_end.unwrap(),
-                cache.script.end_tag_start.unwrap(),
-                &cache.template_compile_result,
-                &props,
-                cache.render_insert_offset,
-                cache.document.get_content(None),
-            ))
+            if let Some(script) = &cache.script {
+                // 获取继承组件的 props
+                let mut props = RenderCacheGraph::get_extends_props(&self.graph, node);
+                props.append(&mut cache.props.clone());
+                Some(combined_rendered_results::combined_rendered_results(
+                    script.start_tag_end.unwrap(),
+                    script.end_tag_start.unwrap(),
+                    &cache.template_compile_result,
+                    &props,
+                    cache.render_insert_offset,
+                    cache.document.get_content(None),
+                ))
+            } else {
+                Some("".to_string())
+            }
         } else {
             None
         }
@@ -283,9 +274,6 @@ impl RenderCacheGraph {
                     }
                 }
                 RenderCache::LibRenderCache(_) => {
-                    next_node = None;
-                }
-                RenderCache::Unknown => {
                     next_node = None;
                 }
             }
@@ -419,7 +407,6 @@ pub enum RenderCache {
     VueRenderCache(VueRenderCache),
     TsRenderCache(TsRenderCache),
     LibRenderCache(LibRenderCache),
-    Unknown,
 }
 
 impl RenderCache {
@@ -442,7 +429,6 @@ impl RenderCache {
                     transfers: None,
                 })
             }
-            RenderCache::Unknown => None,
         }
     }
 

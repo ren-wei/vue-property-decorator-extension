@@ -109,7 +109,6 @@ impl Renderer {
                         });
                     }
                 }
-                RenderCache::Unknown => {}
             }
         }
         // TODO: 获取继承节点注册的组件
