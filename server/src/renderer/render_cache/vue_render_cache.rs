@@ -6,7 +6,7 @@ use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 use crate::{
     lazy::REG_SINGLE_BRACKET,
     renderer::{
-        parse_document,
+        combined_rendered_results, parse_document,
         parse_script::{self, ExtendsComponent, ParseScriptResult, RegisterComponent},
         template_compile::{self, CompileMapping},
     },
@@ -96,7 +96,11 @@ impl VueRenderCache {
                         TextDocumentContentChangeEvent {
                             range: change.range,
                             range_length: change.range_length,
-                            text: " ".repeat(change.text.len()),
+                            text: combined_rendered_results::get_fill_space_source(
+                                &change.text,
+                                0,
+                                0,
+                            ),
                         },
                         // 替换 template_compile_result
                         TextDocumentContentChangeEvent {
@@ -125,7 +129,11 @@ impl VueRenderCache {
                         TextDocumentContentChangeEvent {
                             range: change.range,
                             range_length: change.range_length,
-                            text: " ".repeat(change.text.len()),
+                            text: combined_rendered_results::get_fill_space_source(
+                                &change.text,
+                                0,
+                                0,
+                            ),
                         },
                     ],
                     is_change_prop: false,
@@ -237,7 +245,7 @@ impl VueRenderCache {
                     TextDocumentContentChangeEvent {
                         range: Some(style_range),
                         range_length: change.range_length,
-                        text: " ".repeat(change.text.len()),
+                        text: combined_rendered_results::get_fill_space_source(&change.text, 0, 0),
                     },
                 ],
                 is_change_prop: false,
@@ -658,6 +666,54 @@ mod tests {
     }
 
     #[test]
+    fn template_add_line_breaks() {
+        assert_update(&[TextDocumentContentChangeEvent {
+            range: Some(Range {
+                start: Position {
+                    line: 3,
+                    character: 0,
+                },
+                end: Position {
+                    line: 3,
+                    character: 0,
+                },
+            }),
+            range_length: Some(0),
+            text: "div\n".to_string(),
+        }]);
+        assert_update(&[
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 2,
+                        character: 48,
+                    },
+                    end: Position {
+                        line: 2,
+                        character: 48,
+                    },
+                }),
+                range_length: Some(0),
+                text: "\n    ".to_string(),
+            },
+            TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 3,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 3,
+                        character: 4,
+                    },
+                }),
+                range_length: Some(0),
+                text: "div".to_string(),
+            },
+        ]);
+    }
+
+    #[test]
     fn script_safe_update() {
         // 删除 prop4 中的 "value" 不包含 e
         assert_update(&[TextDocumentContentChangeEvent {
@@ -866,6 +922,24 @@ mod tests {
                 text: "calc(".to_string(),
             },
         ]);
+    }
+
+    #[test]
+    fn script_add_line_breaks() {
+        assert_update(&[TextDocumentContentChangeEvent {
+            range: Some(Range {
+                start: Position {
+                    line: 28,
+                    character: 0,
+                },
+                end: Position {
+                    line: 28,
+                    character: 0,
+                },
+            }),
+            range_length: Some(0),
+            text: "private prop5 = 1;\n".to_string(),
+        }]);
     }
 
     #[test]
