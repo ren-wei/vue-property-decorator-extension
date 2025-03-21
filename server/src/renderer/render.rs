@@ -7,7 +7,7 @@ use tokio::{
 };
 use tower_lsp::lsp_types::{
     CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, RenameFilesParams,
-    TextDocumentContentChangeEvent, Url,
+    TextDocumentContentChangeEvent, Url, VersionedTextDocumentIdentifier,
 };
 use tracing::{debug, error, warn};
 use walkdir::WalkDir;
@@ -32,7 +32,7 @@ pub trait Render {
         params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) -> DidChangeTextDocumentParams;
-    fn save(&self, uri: &Url);
+    async fn save(&mut self, uri: &Url) -> Option<DidChangeTextDocumentParams>;
     fn is_wait_create(&self, uri: &Url) -> bool;
     async fn did_open(&mut self, uri: &Url);
     fn will_create_files(&mut self, params: &CreateFilesParams);
@@ -183,10 +183,40 @@ impl Render for Renderer {
         }
     }
 
-    fn save(&self, uri: &Url) {
+    /// 保存 vue 节点，重新全量渲染，返回变更内容
+    async fn save(&mut self, uri: &Url) -> Option<DidChangeTextDocumentParams> {
+        // 保存前再次全量解析 vue 节点为 update 出错提供修复机会
+        let version = self.render_cache.get(uri).unwrap().get_version()?;
+        self.render_cache.remove_outgoing_edge(uri);
+        self.create_node(uri).await;
+        self.render_cache.flush();
+        self.render_cache
+            .get_mut(uri)
+            .unwrap()
+            .update_version(version + 1);
+        // 更新影响的组件
+        self.render_cache.update_incoming_node_version(uri);
+        let change = if let Some(content) = self.render_cache.get_node_render_content(uri) {
+            Some(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: uri.clone(),
+                    version,
+                },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: content,
+                }],
+            })
+        } else {
+            None
+        };
+
         let (root_uri, target_root_uri) = self.root_uri_target_uri.as_ref().unwrap();
         self.render_cache
             .render_node(uri, root_uri, target_root_uri);
+
+        change
     }
 
     /// 是否需要等待文件创建
@@ -199,6 +229,7 @@ impl Render for Renderer {
         if self.render_cache.get(uri).is_none() {
             let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
             self.create_node(uri).await;
+            self.render_cache.flush();
             self.render_cache
                 .render_node(uri, &root_uri, &target_root_uri);
         }

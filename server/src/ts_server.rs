@@ -187,6 +187,19 @@ impl TsServer {
             .await
     }
 
+    pub async fn did_save(&mut self, params: DidChangeTextDocumentParams) {
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            renderer: Some(&renderer),
+            ..Default::default()
+        };
+        let params = params.convert_to(options).await;
+        drop(renderer);
+        self.server
+            .send_notification::<DidChangeTextDocument>(params)
+            .await;
+    }
+
     pub async fn will_rename_files(
         &self,
         params: RenameFilesParams,

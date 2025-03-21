@@ -259,12 +259,25 @@ impl LanguageServer for VueLspServer {
 
     #[instrument]
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        if !VueLspServer::is_uri_valid(&params.text_document.uri) {
+        let uri = &params.text_document.uri;
+        if !VueLspServer::is_uri_valid(uri) {
             return;
         }
         info!("start");
         let start_time = time::Instant::now();
-        self.renderer.lock().await.save(&params.text_document.uri);
+        let change = {
+            self.renderer
+                .lock()
+                .await
+                .save(&params.text_document.uri)
+                .await
+        };
+        if let Some(change) = change {
+            debug!("lock ts_server await");
+            let mut ts_server = self.ts_server.write().await;
+            debug!("lock ts_server");
+            ts_server.did_save(change).await;
+        }
         info!("done {:?}", start_time.elapsed());
     }
 

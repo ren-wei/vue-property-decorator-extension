@@ -123,7 +123,9 @@ impl RenderCacheGraph {
         for node in nodes {
             debug!("update version: {}", self.get_node_uri(node).path());
             let cache = self.graph.node_weight_mut(node).unwrap();
-            cache.update_version();
+            if let Some(version) = cache.get_version() {
+                cache.update_version(version + 1);
+            }
         }
     }
 
@@ -435,10 +437,18 @@ impl RenderCache {
         }
     }
 
-    /// 如果是 vue 缓存，那么更新文档版本
-    pub fn update_version(&mut self) {
+    pub fn get_version(&self) -> Option<i32> {
         if let RenderCache::VueRenderCache(cache) = self {
-            cache.document.update(&[], cache.document.version() + 1);
+            Some(cache.document.version())
+        } else {
+            None
+        }
+    }
+
+    /// 如果是 vue 缓存，那么更新文档版本
+    pub fn update_version(&mut self, version: i32) {
+        if let RenderCache::VueRenderCache(cache) = self {
+            cache.document.update(&[], version);
         }
     }
 }
