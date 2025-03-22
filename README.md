@@ -5,6 +5,8 @@
 ![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/ren-wei.vue-property-decorator-extension)
 ![LICENSE](https://img.shields.io/badge/license-MIT-green)
 
+[中文文档](https://github.com/ren-wei/vue-property-decorator-extension/blob/master/README-zh-CN.md)
+
 This is a high-performance LSP extension of vscode that is support `vue2 + typescript + decorator` ( `vue-property-decorator`).
 
 This extension adopts the LSP architecture, the backend of the language features is written in rust, and the underlying of the typescript language features is done by `tsserver`.
