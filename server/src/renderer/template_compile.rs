@@ -15,6 +15,7 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
     let attrs = node.attribute_names();
 
     // v-if
+    let mut skip_util_v_if = false;
     let v_if_key = "v-if";
     if attrs.iter().find(|v| **v == v_if_key).is_some() {
         let value = node.attributes.get(v_if_key).unwrap();
@@ -25,11 +26,13 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                 result.add_fragment(&value[1..value.len() - 1], value_offset);
                 result.add_wrap("){");
                 close_str = "}";
+                skip_util_v_if = true;
             }
         }
     }
 
     // v-else-if
+    let mut skip_util_v_else_if = false;
     let v_else_if_key = "v-else-if";
     if attrs.iter().find(|v| **v == v_else_if_key).is_some() {
         let value = node.attributes.get(v_else_if_key).unwrap();
@@ -40,6 +43,7 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                 result.add_fragment(&value[1..value.len() - 1], value_offset);
                 result.add_wrap("){");
                 close_str = "}";
+                skip_util_v_else_if = true;
             }
         }
     }
@@ -88,6 +92,11 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
             if let Some(value) = &value.value {
                 if value.starts_with(r#"""#) && value.ends_with(r#"""#) && value.len() > 1 {
                     let value = &value[1..value.len() - 1];
+                    if key == v_if_key {
+                        skip_util_v_if = false;
+                    } else if key == v_else_if_key {
+                        skip_util_v_else_if = false;
+                    }
                     if key == v_for_key {
                         if let Some((left, right)) = value.split_once(" in ") {
                             if let Some(caps) = REG_V_FOR_WITH_INDEX.captures(left) {
@@ -123,7 +132,7 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                         result.add_fragment(value, value_offset);
                         result.add_wrap("} = {} as Record<string, any>;");
                         close_str = "}";
-                    } else {
+                    } else if !skip_util_v_if && !skip_util_v_else_if {
                         result.add_wrap("(");
                         result.add_fragment(value, value_offset);
                         result.add_wrap(");");
@@ -266,6 +275,12 @@ mod tests {
             r#"<template><ProjectHeader v-if="showHeader" title="header" /><Empty v-else-if="showEmpty" /></template>"#,
             "if(showHeader){}else if(showEmpty){}",
             &[(3, 31, 10), (24, 73, 9)],
+        );
+        // 位于 v-if 之前的表达式暂时跳过
+        assert_render(
+            r#"<template><ProjectHeader :title="title" v-if="showHeader" /><Empty /></template>"#,
+            "if(showHeader){}",
+            &[(3, 46, 10)],
         );
     }
 
