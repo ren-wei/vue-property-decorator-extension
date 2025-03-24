@@ -1,5 +1,5 @@
 import * as path from "path";
-import { ExtensionContext } from "vscode";
+import { ExtensionContext, window } from "vscode";
 
 import {
     LanguageClient,
@@ -38,7 +38,11 @@ export function activate(context: ExtensionContext) {
     );
 
     // Start the client. This will also launch the server
-    client.start();
+    if (process.platform === "win32") {
+        window.showErrorMessage("The Windows platform is not currently supported.");
+    } else {
+        client.start();
+    }
 }
 
 export function deactivate(): Thenable<void> | undefined {

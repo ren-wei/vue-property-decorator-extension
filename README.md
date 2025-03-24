@@ -11,6 +11,8 @@ This is a high-performance LSP extension of vscode that is support `vue2 + types
 
 This extension adopts the LSP architecture, the backend of the language features is written in rust, and the underlying of the typescript language features is done by `tsserver`.
 
+> Note: This extension is currently only supported on Linux and Mac platforms，Windows will be supported in the future and is currently recommended for use under WSL.
+
 ## Features
 
 * Language features that support expressions in template tag, including Hover, Completion, Goto Definition, Semantic Tokens, Diagnostics, and more.
