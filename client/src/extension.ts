@@ -11,7 +11,7 @@ let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
     const serverModule = context.asAbsolutePath(
-        path.join("server", "target", ...(process.platform === "darwin" ? ["debug", "vue-property-decorator-extension-server"] : process.platform === "win32" ? ["x86_64-pc-windows-gnu", "release", "vue-property-decorator-extension-server.exe"] : ["x86_64-unknown-linux-musl", "release", "vue-property-decorator-extension-server"]))
+        path.join("server", "target", ...(process.platform === "darwin" ? ["release", "vue-property-decorator-extension-server"] : process.platform === "win32" ? ["x86_64-pc-windows-gnu", "release", "vue-property-decorator-extension-server.exe"] : ["x86_64-unknown-linux-musl", "release", "vue-property-decorator-extension-server"]))
     );
 
     const serverOptions: ServerOptions = {
