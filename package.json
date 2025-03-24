@@ -3,7 +3,7 @@
   "description": "Rust lsp extension template for vscode.",
   "author": "ren-wei",
   "license": "MIT",
-  "version": "1.0.0-preview.1",
+  "version": "1.0.0.1",
   "preview": true,
   "repository": {
     "type": "git",
@@ -12,6 +12,7 @@
   "publisher": "ren-wei",
   "categories": [],
   "keywords": [],
+  "icon": "images/logo.png",
   "engines": {
     "vscode": "^1.70.1"
   },
