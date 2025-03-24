@@ -24,27 +24,9 @@ use super::{
     Renderer,
 };
 
-pub trait Render {
-    async fn init(&mut self, root_uri: &Url);
-    async fn update(
-        &mut self,
-        uri: &Url,
-        params: DidChangeTextDocumentParams,
-        document: &FullTextDocument,
-    ) -> DidChangeTextDocumentParams;
-    async fn save(&mut self, uri: &Url) -> Option<DidChangeTextDocumentParams>;
-    fn is_wait_create(&self, uri: &Url) -> bool;
-    async fn did_open(&mut self, uri: &Url);
-    fn will_create_files(&mut self, params: &CreateFilesParams);
-    async fn did_create_files(&mut self, did_create_files: CreateFilesParams);
-    fn will_rename_files(&mut self, params: &RenameFilesParams);
-    async fn did_rename_files(&mut self, params: RenameFilesParams);
-    async fn did_delete_files(&mut self, params: DeleteFilesParams);
-}
-
-impl Render for Renderer {
+impl Renderer {
     /// 创建渲染目录，并进行渲染
-    async fn init(&mut self, root_uri: &Url) {
+    pub async fn init(&mut self, root_uri: &Url) {
         let src_path = root_uri.to_file_path().unwrap();
         // 在当前项目所在的目录创建增加了 `.~$` 前缀的同名目录
         let mut target_root_path = src_path.clone();
@@ -110,7 +92,7 @@ impl Render for Renderer {
     /// * 更新继承关系
     /// * 更新注册关系
     /// * 更新继承自当前文件的文件
-    async fn update(
+    pub async fn update(
         &mut self,
         uri: &Url,
         params: DidChangeTextDocumentParams,
@@ -180,7 +162,7 @@ impl Render for Renderer {
     }
 
     /// 保存 vue 节点，重新全量渲染，返回变更内容
-    async fn save(&mut self, uri: &Url) -> Option<DidChangeTextDocumentParams> {
+    pub async fn save(&mut self, uri: &Url) -> Option<DidChangeTextDocumentParams> {
         // 保存前再次全量解析 vue 节点为 update 出错提供修复机会
         let version = self.render_cache.get(uri).unwrap().get_version()?;
         self.render_cache.remove_outgoing_edge(uri);
@@ -216,12 +198,12 @@ impl Render for Renderer {
     }
 
     /// 是否需要等待文件创建
-    fn is_wait_create(&self, uri: &Url) -> bool {
+    pub fn is_wait_create(&self, uri: &Url) -> bool {
         self.will_create_files.contains(uri)
     }
 
     /// 文件打开时检查节点是否存在，如果节点不存在，那么先创建节点
-    async fn did_open(&mut self, uri: &Url) {
+    pub async fn did_open(&mut self, uri: &Url) {
         if self.render_cache.get(uri).is_none() {
             let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
             self.create_node(uri).await;
@@ -231,7 +213,7 @@ impl Render for Renderer {
         }
     }
 
-    fn will_create_files(&mut self, params: &CreateFilesParams) {
+    pub fn will_create_files(&mut self, params: &CreateFilesParams) {
         for file in &params.files {
             let uri = Url::from_str(&file.uri).unwrap();
             if Renderer::is_uri_valid(&uri) {
@@ -240,7 +222,7 @@ impl Render for Renderer {
         }
     }
 
-    async fn did_create_files(&mut self, params: CreateFilesParams) {
+    pub async fn did_create_files(&mut self, params: CreateFilesParams) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let uri = Url::from_str(&file.uri).unwrap();
@@ -254,7 +236,7 @@ impl Render for Renderer {
         self.render_cache.flush();
     }
 
-    fn will_rename_files(&mut self, params: &RenameFilesParams) {
+    pub fn will_rename_files(&mut self, params: &RenameFilesParams) {
         for file in &params.files {
             let uri = Url::from_str(&file.new_uri).unwrap();
             if Renderer::is_uri_valid(&uri) {
@@ -264,7 +246,7 @@ impl Render for Renderer {
         }
     }
 
-    async fn did_rename_files(&mut self, params: RenameFilesParams) {
+    pub async fn did_rename_files(&mut self, params: RenameFilesParams) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let old_uri = Url::from_str(&file.old_uri).unwrap();
@@ -284,7 +266,7 @@ impl Render for Renderer {
         self.render_cache.flush();
     }
 
-    async fn did_delete_files(&mut self, params: DeleteFilesParams) {
+    pub async fn did_delete_files(&mut self, params: DeleteFilesParams) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
             let uri = Url::from_str(&file.uri).unwrap();

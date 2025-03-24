@@ -12,7 +12,6 @@ mod template_compile;
 use html_languageservice::parser::html_document::HTMLDocument;
 pub use mapping::Mapping;
 pub use mapping::PositionType;
-pub use render::Render;
 use render_cache::RenderCache;
 use render_cache::RenderCacheGraph;
 use tags_provider::ArcTagsProvider;
