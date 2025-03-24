@@ -18,13 +18,13 @@ use tower_lsp::lsp_types::{
     CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
     CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbolParams,
-    DocumentSymbolResponse, ExecuteCommandParams, FileOperationFilter, FileOperationPattern,
-    FileOperationRegistrationOptions, GotoDefinitionParams, GotoDefinitionResponse, Hover,
-    HoverParams, InitializeParams, InitializeResult, InitializedParams, RenameFilesParams,
-    SemanticTokensParams, SemanticTokensRangeParams, SemanticTokensRangeResult,
-    SemanticTokensResult, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url, WorkspaceEdit, WorkspaceFileOperationsServerCapabilities,
-    WorkspaceServerCapabilities,
+    DocumentSymbolResponse, ExecuteCommandOptions, ExecuteCommandParams, FileOperationFilter,
+    FileOperationPattern, FileOperationRegistrationOptions, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult,
+    InitializedParams, RenameFilesParams, SemanticTokensParams, SemanticTokensRangeParams,
+    SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities, ServerInfo,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkDoneProgressOptions, WorkspaceEdit,
+    WorkspaceFileOperationsServerCapabilities, WorkspaceServerCapabilities,
 };
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
@@ -121,6 +121,15 @@ impl LanguageServer for VueLspServer {
                     },
                 }],
             });
+            let mut commands = vec!["vue2-ts-decorator.restart.tsserver".to_string()];
+            if let Some(execute_command_provider) = result.capabilities.execute_command_provider {
+                let mut ts_commands = execute_command_provider
+                    .commands
+                    .iter()
+                    .map(|c| c.replace("_typescript", "vue2-ts-decorator_typescript"))
+                    .collect::<Vec<String>>();
+                commands.append(&mut ts_commands);
+            }
             Ok(InitializeResult {
                 server_info: Some(ServerInfo {
                     name: "vue-property-decorator-extension-server".to_string(),
@@ -151,6 +160,12 @@ impl LanguageServer for VueLspServer {
                             will_delete: None,
                             did_delete: file_operation,
                         }),
+                    }),
+                    execute_command_provider: Some(ExecuteCommandOptions {
+                        commands,
+                        work_done_progress_options: WorkDoneProgressOptions {
+                            work_done_progress: None,
+                        },
                     }),
                     ..Default::default()
                 },
@@ -684,12 +699,15 @@ impl LanguageServer for VueLspServer {
         result
     }
 
-    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {
+    async fn execute_command(&self, mut params: ExecuteCommandParams) -> Result<Option<Value>> {
         let text_documents = self.text_documents.lock().await;
         if params.command == "vue2-ts-decorator.restart.tsserver" {
             self.ts_server.write().await.restart(&text_documents).await;
             Ok(None)
         } else {
+            params.command = params
+                .command
+                .replace("vue2-ts-decorator_typescript", "_typescript");
             self.ts_server.read().await.execute_command(params).await
         }
     }
