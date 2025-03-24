@@ -36,7 +36,7 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
     let v_else_if_key = "v-else-if";
     if attrs.iter().find(|v| **v == v_else_if_key).is_some() {
         let value = node.attributes.get(v_else_if_key).unwrap();
-        let value_offset = value.offset + v_if_key.len() + 2;
+        let value_offset = value.offset + v_else_if_key.len() + 2;
         if let Some(value) = &value.value {
             if value.starts_with(r#"""#) && value.ends_with(r#"""#) && value.len() > 1 {
                 result.add_wrap("else if(");
@@ -274,7 +274,7 @@ mod tests {
         assert_render(
             r#"<template><ProjectHeader v-if="showHeader" title="header" /><Empty v-else-if="showEmpty" /></template>"#,
             "if(showHeader){}else if(showEmpty){}",
-            &[(3, 31, 10), (24, 73, 9)],
+            &[(3, 31, 10), (24, 78, 9)],
         );
         // 位于 v-if 之前的表达式暂时跳过
         assert_render(
