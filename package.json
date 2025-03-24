@@ -3,7 +3,8 @@
   "description": "Rust lsp extension template for vscode.",
   "author": "ren-wei",
   "license": "MIT",
-  "version": "1.0.0",
+  "version": "1.0.0-preview.1",
+  "preview": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/ren-wei/vue-property-decorator-extension.git"
