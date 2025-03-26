@@ -58,9 +58,9 @@ dependencies = [
 
 [[package]]
 name = "async-lsp-client"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed17eb18abf78379ca3fe7c2b062129cb6ba2af3aed258ab43cfacae97fd1f22"
+checksum = "91538420f67b3cd1e0283bcb6d6663db3f18e0f74768045697285e53a36fda6c"
 dependencies = [
  "serde",
  "serde_json",
