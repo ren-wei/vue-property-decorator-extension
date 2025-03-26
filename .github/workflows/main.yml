@@ -5,22 +5,7 @@ on:
 
 name: Deploy Extension
 jobs:
-  check-tag:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check if tag major version is >= 1
-        id: check-major
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          major_version=$(echo $tag | cut -d. -f1)
-          if [[ $major_version =~ ^[0-9]+$ ]] && [ $major_version -ge 1 ]; then
-            echo "major_version_valid=true" >> $GITHUB_OUTPUT
-          else
-            echo "major_version_valid=false" >> $GITHUB_OUTPUT
-          fi
   deploy:
-    needs: check-tag
-    if: steps.check-major.outputs.major_version_valid == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
