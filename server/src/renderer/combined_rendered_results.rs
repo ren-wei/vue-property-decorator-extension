@@ -4,7 +4,7 @@ pub fn combined_rendered_results(
     script_start_pos: usize,
     script_end_pos: usize,
     template_compile_result: &str,
-    props: &Vec<String>,
+    props: &Vec<&str>,
     render_insert_offset: usize,
     source: &str,
 ) -> String {

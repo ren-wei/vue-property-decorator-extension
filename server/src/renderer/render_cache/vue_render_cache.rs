@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use super::RenderCacheUpdateResult;
+use super::{RenderCacheProp, RenderCacheUpdateResult};
 
 /// vue 组件的渲染缓存
 #[derive(Debug)]
@@ -30,7 +30,7 @@ pub struct VueRenderCache {
     pub template_compile_result: String,
     pub mapping: CompileMapping,
     /// 解析脚本得到的属性
-    pub props: Vec<String>,
+    pub props: Vec<RenderCacheProp>,
     pub render_insert_offset: usize,
     /// 安全更新范围，处于此范围的更新无需重新解析脚本
     pub safe_update_range: Vec<(usize, usize)>,
@@ -201,7 +201,13 @@ impl VueRenderCache {
                         self.description = description;
 
                         is_change = is_change || self.props != props;
-                        let old_props_length = self.props.join(",").len() as u32;
+                        let old_props_length = self
+                            .props
+                            .iter()
+                            .map(|v| v.name.clone())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                            .len() as u32;
                         self.props = props;
 
                         self.safe_update_range = safe_update_range;
@@ -224,7 +230,12 @@ impl VueRenderCache {
                                         },
                                     }),
                                     range_length: Some(old_props_length),
-                                    text: self.props.join(","),
+                                    text: self
+                                        .props
+                                        .iter()
+                                        .map(|v| v.name.clone())
+                                        .collect::<Vec<_>>()
+                                        .join(","),
                                 },
                             ],
                             is_change,
@@ -398,7 +409,7 @@ pub struct ParseVueFileResult {
     pub name_range: (usize, usize),
     pub description: Option<Description>,
     /// 渲染得到的属性
-    pub props: Vec<String>,
+    pub props: Vec<RenderCacheProp>,
     pub render_insert_offset: usize,
     pub template_compile_result: String,
     pub mapping: CompileMapping,
@@ -591,7 +602,7 @@ mod tests {
                 script.start_tag_end.unwrap(),
                 script.end_tag_start.unwrap(),
                 &cache.template_compile_result,
-                &cache.props,
+                &cache.props.iter().map(|v| &v.name[..]).collect::<Vec<_>>(),
                 cache.render_insert_offset,
                 cache.document.get_content(None),
             )

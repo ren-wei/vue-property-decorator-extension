@@ -12,6 +12,7 @@ use crate::renderer::parse_script::ExtendsComponent;
 use crate::renderer::parse_script::ParseScriptResult;
 use crate::renderer::parse_script::RegisterComponent;
 
+use super::RenderCacheProp;
 use super::RenderCacheUpdateResult;
 use super::Renderer;
 
@@ -26,7 +27,7 @@ pub struct TsRenderCache {
 pub struct TsComponent {
     pub name_range: Range,
     pub description: Option<Description>,
-    pub props: Vec<String>,
+    pub props: Vec<RenderCacheProp>,
 }
 
 impl TsRenderCache {
@@ -129,7 +130,7 @@ pub struct ParseTsFileResult {
     pub ts_component: Option<(
         Range,
         Option<Description>,
-        Vec<String>,
+        Vec<RenderCacheProp>,
         Option<ExtendsComponent>,
         Vec<RegisterComponent>,
     )>,

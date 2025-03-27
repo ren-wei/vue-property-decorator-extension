@@ -4,6 +4,7 @@ pub mod vue_render_cache;
 
 use std::{collections::HashMap, ops::Index};
 
+use html_languageservice::html_data::Description;
 use lib_render_cache::LibRenderCache;
 use lsp_textdocument::FullTextDocument;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
@@ -195,8 +196,12 @@ impl RenderCacheGraph {
         if let RenderCache::VueRenderCache(cache) = cache {
             if let Some(script) = &cache.script {
                 // 获取继承组件的 props
-                let mut props = RenderCacheGraph::get_extends_props(&self.graph, node);
-                props.append(&mut cache.props.clone());
+                let extends_props = RenderCacheGraph::get_extends_props(&self.graph, node);
+                let mut props = extends_props
+                    .iter()
+                    .map(|v| &v.name[..])
+                    .collect::<Vec<_>>();
+                props.append(&mut cache.props.iter().map(|v| &v.name[..]).collect::<Vec<_>>());
                 Some(combined_rendered_results::combined_rendered_results(
                     script.start_tag_end.unwrap(),
                     script.end_tag_start.unwrap(),
@@ -240,7 +245,7 @@ impl RenderCacheGraph {
     }
 
     /// 获取当前节点的所有继承属性
-    fn get_extends_props(graph: &RRGraph, node: NodeIndex) -> Vec<String> {
+    fn get_extends_props(graph: &RRGraph, node: NodeIndex) -> Vec<RenderCacheProp> {
         let mut extends_props = vec![];
         let mut next_node = RenderCacheGraph::get_extends_node(&graph, node);
         while let Some((cur_node, export_name)) = next_node {
@@ -469,6 +474,13 @@ pub struct RenderCacheUpdateResult {
     pub registers: Option<Vec<RegisterComponent>>,
     /// 转换关系如果更新，返回更新后的转换关系
     pub transfers: Option<Vec<(Option<String>, Option<String>, String, bool)>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct RenderCacheProp {
+    pub name: String,
+    pub range: (usize, usize),
+    pub description: Option<Description>,
 }
 
 #[derive(PartialEq)]

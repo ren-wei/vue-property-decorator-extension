@@ -4,7 +4,7 @@ use swc_ecma_ast::{ClassMember, Module};
 
 use crate::ast;
 
-use super::multi_threaded_comment::MultiThreadedComments;
+use super::{multi_threaded_comment::MultiThreadedComments, render_cache::RenderCacheProp};
 
 /// 解析脚本，输出 props, render_insert_offset, extends_component, registers
 pub fn parse_script(source: &str, start_pos: usize, end_pos: usize) -> Option<ParseScriptResult> {
@@ -31,7 +31,15 @@ pub fn parse_module(
             .filter(|v| ast::filter_all_prop_method(v))
             .collect::<Vec<_>>()
         {
-            props.push(ast::get_class_member_name(member));
+            let name = ast::get_class_member_name(member);
+            let start = ast::get_class_member_pos(member).to_usize();
+            let end = start + name.len();
+            let description = ast::get_class_member_description(member, comments);
+            props.push(RenderCacheProp {
+                name,
+                range: (start, end),
+                description,
+            });
             // 获取安全更新范围
             match member {
                 ClassMember::Method(method) => {
@@ -129,7 +137,7 @@ pub struct RegisterComponent {
 pub struct ParseScriptResult {
     pub name_span: Span,
     pub description: Option<Description>,
-    pub props: Vec<String>,
+    pub props: Vec<RenderCacheProp>,
     pub render_insert_offset: usize,
     pub extends_component: Option<ExtendsComponent>,
     pub registers: Vec<RegisterComponent>,
@@ -143,7 +151,7 @@ mod tests {
     fn assert_props(source: &str, expected: &[&str]) {
         let props = super::parse_script(source, 0, source.len()).unwrap().props;
         assert_eq!(
-            props,
+            props.iter().map(|v| v.name.clone()).collect::<Vec<_>>(),
             expected.iter().map(|v| v.to_string()).collect::<Vec<_>>()
         );
     }

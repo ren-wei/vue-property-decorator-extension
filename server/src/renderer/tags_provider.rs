@@ -43,8 +43,8 @@ impl Renderer {
                             .props
                             .iter()
                             .map(|prop| IAttributeData {
-                                name: prop.clone(),
-                                description: None,
+                                name: prop.name.clone(),
+                                description: prop.description.clone(),
                                 value_set: None,
                                 values: None,
                                 references: None,
@@ -63,8 +63,8 @@ impl Renderer {
                                 .props
                                 .iter()
                                 .map(|prop| IAttributeData {
-                                    name: prop.clone(),
-                                    description: None,
+                                    name: prop.name.clone(),
+                                    description: prop.description.clone(),
                                     value_set: None,
                                     values: None,
                                     references: None,
