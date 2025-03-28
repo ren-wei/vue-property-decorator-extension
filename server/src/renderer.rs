@@ -200,9 +200,7 @@ impl Renderer {
     pub fn is_uri_valid(uri: &Url) -> bool {
         let file_path = uri.to_file_path();
         if let Ok(file_path) = file_path {
-            file_path.exists()
-                && file_path.is_file()
-                && !file_path.to_string_lossy().contains("/node_modules/")
+            file_path.exists() && file_path.is_file() && !uri.path().contains("/node_modules/")
         } else {
             false
         }
@@ -265,11 +263,32 @@ impl Renderer {
         // 转换为目标路径
         let mut target_path = target_root_path.join(rel_path);
         if let Some(file_name) = target_path.file_name() {
-            if target_path.extension().is_some_and(|v| v == "vue") {
+            if file_name.to_string_lossy().ends_with(".vue") {
                 let new_file_name = format!("{}.ts", file_name.to_string_lossy());
                 target_path.set_file_name(new_file_name);
             }
         }
         target_path
+    }
+
+    /// 获取原路径
+    pub fn get_source_path(uri: &Url, root_uri: &Url, target_root_uri: &Url) -> PathBuf {
+        let target_path = uri.to_file_path().unwrap();
+        let root_path = root_uri.to_file_path().unwrap();
+        let target_root_path = target_root_uri.to_file_path().unwrap();
+        // 计算相对路径
+        let rel_path = target_path
+            .strip_prefix(target_root_path)
+            .unwrap()
+            .to_path_buf();
+        // 转换为原路径
+        let mut source_path = root_path.join(rel_path);
+        if let Some(file_name) = source_path.file_name() {
+            let file_name = file_name.to_string_lossy().to_string();
+            if file_name.ends_with(".vue.ts") {
+                source_path.set_file_name(&file_name[..file_name.len() - 3]);
+            }
+        }
+        source_path
     }
 }

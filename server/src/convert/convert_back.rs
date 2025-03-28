@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::collections::HashMap;
 
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::*;
@@ -77,17 +77,13 @@ impl ConvertBack for HoverContents {
         fn convert_back_module(s: String, root_uri: &Url, target_uri: &Url) -> String {
             if s.contains("```typescript\nmodule") {
                 if let Some(caps) = REG_TYPESCRIPT_MODULE.captures(&s) {
-                    let src_dir = PathBuf::from_str(root_uri.path()).unwrap();
-                    let dest_dir = target_uri.path();
                     let dest_path = caps.get(1).map_or("", |m| m.as_str());
                     if dest_path != "*.vue" && !dest_path.contains("/node_modules/") {
-                        let rel_path =
-                            if let Some(v) = dest_path.strip_prefix(&format!("{}/", dest_dir)) {
-                                v
-                            } else {
-                                panic!("dest_path: {} dest_dir: {}", dest_path, dest_dir);
-                            };
-                        let src_path = src_dir.join(&rel_path);
+                        let src_path = Renderer::get_source_path(
+                            &Url::from_file_path(dest_path).unwrap(),
+                            root_uri,
+                            target_uri,
+                        );
                         let src_path = src_path.to_str().unwrap();
                         format!("\n```typescript\nmodule \"{}\"\n```\n", src_path)
                     } else {
@@ -663,6 +659,7 @@ impl ConvertBack for Vec<Diagnostic> {
             if let Some(start) = start {
                 let end = Position {
                     line: start.line,
+                    // TODO: 这里 panic
                     character: start.character + diag.range.end.character
                         - diag.range.start.character,
                 };

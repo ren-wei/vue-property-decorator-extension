@@ -67,8 +67,21 @@ impl RenderCacheGraph {
     ///
     /// *Panics* 如果节点不存在
     pub fn add_edge(&mut self, from: &Url, to: &Url, relation: Relationship) {
-        let a = *self.idx_map.get(from).unwrap();
-        let b = *self.idx_map.get(to).unwrap();
+        let a = self.idx_map.get(from);
+        if a.is_none() {
+            panic!("from: {:?}", from.path());
+        }
+        let a = *a.unwrap();
+        let b = self.idx_map.get(to);
+        if b.is_none() {
+            panic!(
+                "from: {:?} to: {:?} {}",
+                from.path(),
+                to.path(),
+                relation.as_type()
+            );
+        }
+        let b = *b.unwrap();
         // 检查相同的边是否存在
         let mut edges = self.graph.edges_connecting(a, b);
         if edges.find(|edge| *edge.weight() == relation).is_none() {
@@ -528,6 +541,14 @@ impl Relationship {
             true
         } else {
             false
+        }
+    }
+
+    pub fn as_type(&self) -> &'static str {
+        match self {
+            Relationship::ExtendsRelationship(_) => "ExtendsRelationship",
+            Relationship::RegisterRelationship(_) => "RegisterRelationship",
+            Relationship::TransferRelationship(_) => "TransferRelationship",
         }
     }
 }

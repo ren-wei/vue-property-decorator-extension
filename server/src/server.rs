@@ -33,7 +33,6 @@ use crate::renderer::{Mapping, PositionType, Renderer};
 use crate::ts_server::TsServer;
 
 pub struct VueLspServer {
-    _client: Client,
     is_shared: bool,
     text_documents: Arc<Mutex<TextDocuments>>,
     data_manager: Mutex<HTMLDataManager>,
@@ -56,16 +55,12 @@ impl VueLspServer {
             Arc::new(Mutex::new(TextDocuments::new()))
         };
         let renderer = Arc::new(Mutex::new(Renderer::new()));
-        let ts_server = Arc::new(RwLock::new(TsServer::new(
-            client.clone(),
-            Arc::clone(&renderer),
-        )));
+        let ts_server = Arc::new(RwLock::new(TsServer::new(client, Arc::clone(&renderer))));
         let data_manager = Mutex::new(HTMLDataManager::default());
         let html_server = Mutex::new(HTMLLanguageService::new(
             &HTMLLanguageServiceOptions::default(),
         ));
         VueLspServer {
-            _client: client,
             is_shared,
             text_documents,
             data_manager,
@@ -100,7 +95,6 @@ impl VueLspServer {
 impl Debug for VueLspServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("LspServer")
-            .field("_client", &self._client)
             .field("is_shared", &self.is_shared)
             .finish()
     }
