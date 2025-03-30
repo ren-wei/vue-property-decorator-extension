@@ -344,6 +344,13 @@ impl VueRenderCache {
                 move_it(&mut item.1, incremental);
             }
         }
+        // 移动 props
+        for prop in &mut self.props {
+            if offset < prop.range.0 {
+                move_it(&mut prop.range.0, incremental);
+                move_it(&mut prop.range.1, incremental);
+            }
+        }
         // 移动 render_insert_offset
         if offset < self.render_insert_offset {
             move_it(&mut self.render_insert_offset, incremental);
