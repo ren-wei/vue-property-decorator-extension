@@ -17,7 +17,9 @@ This extension adopts the LSP architecture, the backend of the language features
 
 * Language features that support expressions in template tag, including Hover, Completion, Goto Definition, Semantic Tokens, Diagnostics, and more.
 
-* The template tag name can be used to overhead the component description, the tag attribute will automatically complete the component attribute, and the tag name can jump to the component definition.
+* The template tag name can be used to overhead the component description, and it can jump to the component definition.
+
+* The template tag attribute will automatically complete the component attribute, and it can jump to the component property definition.
 
 * The TS language feature of script tag is fully supported.
 
