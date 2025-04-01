@@ -1,5 +1,5 @@
 use html_languageservice::html_data::Description;
-use swc_common::{comments::Comments, BytePos};
+use swc_common::{comments::Comments, source_map::SmallPos, BytePos};
 use swc_ecma_ast::{ClassMember, ClassProp};
 use tower_lsp::lsp_types::{MarkupContent, MarkupKind};
 
@@ -32,8 +32,8 @@ pub fn filter_all_prop_method(prop: &ClassMember) -> bool {
     }
 }
 
-pub fn get_class_member_name(prop: &ClassMember) -> String {
-    match prop {
+pub fn get_class_member_name(member: &ClassMember) -> String {
+    match member {
         ClassMember::PrivateProp(prop) => prop.key.name.to_string(),
         ClassMember::ClassProp(prop) => get_name_form_prop_name(&prop.key),
         ClassMember::Method(method) => get_name_form_prop_name(&method.key),
@@ -42,18 +42,58 @@ pub fn get_class_member_name(prop: &ClassMember) -> String {
     }
 }
 
+fn get_class_member_type(member: &ClassMember, source: &str) -> String {
+    match member {
+        ClassMember::PrivateProp(prop) => {
+            if let Some(type_ann) = &prop.type_ann {
+                let span = type_ann.span;
+                source[span.lo.to_usize()..span.hi.to_usize()].to_string()
+            } else {
+                String::new()
+            }
+        }
+        ClassMember::ClassProp(prop) => {
+            if let Some(type_ann) = &prop.type_ann {
+                let span = type_ann.span;
+                source[span.lo.to_usize()..span.hi.to_usize()].to_string()
+            } else {
+                String::new()
+            }
+        }
+        _ => String::new(),
+    }
+}
+
 pub fn get_class_member_description(
     member: &ClassMember,
     comments: &MultiThreadedComments,
+    class_name: &str,
+    source: &str,
 ) -> Option<Description> {
-    let comments = comments.get_leading(get_class_member_pos(member))?;
+    let comments = comments
+        .get_leading(get_class_member_pos(member))
+        .unwrap_or_default();
+    let desc = comments
+        .iter()
+        .map(get_markdown)
+        .collect::<Vec<String>>()
+        .join("\n");
+    let member_type = get_class_member_type(member, source);
+    if member_type.len() == 0 {
+        return None;
+    }
+    let mut value = format!(
+        "```typescript\n(property) {}.{}{}\n```\n",
+        class_name,
+        get_class_member_name(member),
+        member_type,
+    );
+    if desc.len() > 0 {
+        value += &format!("\n{}", desc);
+    }
     Some(Description::MarkupContent(MarkupContent {
         kind: MarkupKind::Markdown,
-        value: comments
-            .iter()
-            .map(get_markdown)
-            .collect::<Vec<String>>()
-            .join("\n"),
+        value,
     }))
 }
 

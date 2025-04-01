@@ -10,7 +10,7 @@ use super::{multi_threaded_comment::MultiThreadedComments, render_cache::RenderC
 pub fn parse_script(source: &str, start_pos: usize, end_pos: usize) -> Option<ParseScriptResult> {
     let (module, comments) = ast::parse_source(source, start_pos, end_pos);
     if let Ok(module) = &module {
-        parse_module(module, &comments)
+        parse_module(module, &comments, source)
     } else {
         None
     }
@@ -19,10 +19,16 @@ pub fn parse_script(source: &str, start_pos: usize, end_pos: usize) -> Option<Pa
 pub fn parse_module(
     module: &Module,
     comments: &MultiThreadedComments,
+    source: &str,
 ) -> Option<ParseScriptResult> {
     let mut extends_component = None;
     if let Some(class) = ast::get_default_class_expr_from_module(module) {
         let mut safe_update_range = vec![];
+        let class_name = class
+            .ident
+            .as_ref()
+            .map(|ident| ident.sym.to_string())
+            .unwrap_or("Default".to_string());
         let mut props = vec![];
         for member in class
             .class
@@ -34,7 +40,8 @@ pub fn parse_module(
             let name = ast::get_class_member_name(member);
             let start = ast::get_class_member_pos(member).to_usize();
             let end = start + name.len();
-            let description = ast::get_class_member_description(member, comments);
+            let description =
+                ast::get_class_member_description(member, comments, &class_name, source);
             props.push(RenderCacheProp {
                 name,
                 range: (start, end),

@@ -89,7 +89,7 @@ pub fn parse_ts_file(document: &FullTextDocument) -> ParseTsFileResult {
         registers,
         render_insert_offset: _,
         safe_update_range: _,
-    }) = parse_script::parse_module(&module, &comments)
+    }) = parse_script::parse_module(&module, &comments, source)
     {
         let name_range = Range::new(
             document.position_at(name_span.lo.to_u32()),

@@ -36,40 +36,54 @@ impl Renderer {
         for (register_name, export_name, prop, cache) in registers {
             match cache {
                 RenderCache::VueRenderCache(cache) => {
+                    let mut attributes = vec![];
+                    for prop in &cache.props {
+                        attributes.push(IAttributeData {
+                            name: prop.name.clone(),
+                            description: prop.description.clone(),
+                            value_set: None,
+                            values: None,
+                            references: None,
+                        });
+                        attributes.push(IAttributeData {
+                            name: format!(":{}", prop.name),
+                            description: prop.description.clone(),
+                            value_set: None,
+                            values: None,
+                            references: None,
+                        });
+                    }
                     tags.push(ITagData {
                         name: register_name.clone(),
                         description: cache.description.clone(),
-                        attributes: cache
-                            .props
-                            .iter()
-                            .map(|prop| IAttributeData {
-                                name: prop.name.clone(),
-                                description: prop.description.clone(),
-                                value_set: None,
-                                values: None,
-                                references: None,
-                            })
-                            .collect(),
+                        attributes,
                         references: None,
                         void: None,
                     });
                 }
                 RenderCache::TsRenderCache(cache) => {
                     if let Some(ts_component) = &cache.ts_component {
+                        let mut attributes = vec![];
+                        for prop in &ts_component.props {
+                            attributes.push(IAttributeData {
+                                name: prop.name.clone(),
+                                description: prop.description.clone(),
+                                value_set: None,
+                                values: None,
+                                references: None,
+                            });
+                            attributes.push(IAttributeData {
+                                name: format!(":{}", prop.name),
+                                description: prop.description.clone(),
+                                value_set: None,
+                                values: None,
+                                references: None,
+                            });
+                        }
                         tags.push(ITagData {
                             name: register_name.clone(),
                             description: ts_component.description.clone(),
-                            attributes: ts_component
-                                .props
-                                .iter()
-                                .map(|prop| IAttributeData {
-                                    name: prop.name.clone(),
-                                    description: prop.description.clone(),
-                                    value_set: None,
-                                    values: None,
-                                    references: None,
-                                })
-                                .collect(),
+                            attributes,
                             references: None,
                             void: None,
                         });
@@ -90,20 +104,27 @@ impl Renderer {
                                 continue;
                             }
                         }
+                        let mut attributes = vec![];
+                        for prop in &component.props {
+                            attributes.push(IAttributeData {
+                                name: prop.name.clone(),
+                                description: None,
+                                value_set: None,
+                                values: None,
+                                references: None,
+                            });
+                            attributes.push(IAttributeData {
+                                name: format!(":{}", prop.name),
+                                description: None,
+                                value_set: None,
+                                values: None,
+                                references: None,
+                            });
+                        }
                         tags.push(ITagData {
                             name: register_name.clone(),
                             description: component.description.clone(),
-                            attributes: component
-                                .props
-                                .iter()
-                                .map(|prop| IAttributeData {
-                                    name: prop.name.clone(),
-                                    description: None,
-                                    value_set: None,
-                                    values: None,
-                                    references: None,
-                                })
-                                .collect(),
+                            attributes,
                             references: None,
                             void: None,
                         });
