@@ -38,7 +38,7 @@ pub fn parse_module(
             .collect::<Vec<_>>()
         {
             let name = ast::get_class_member_name(member);
-            let start = ast::get_class_member_pos(member).to_usize();
+            let start = ast::get_class_member_name_pos(member).to_usize();
             let end = start + name.len();
             let description =
                 ast::get_class_member_description(member, comments, &class_name, source);

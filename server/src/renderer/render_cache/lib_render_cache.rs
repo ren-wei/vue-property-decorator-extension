@@ -28,6 +28,7 @@ pub struct LibComponent {
 #[derive(Debug)]
 pub struct LibComponentProp {
     pub name: String,
+    pub location: Location,
 }
 
 /// 解析组件库
@@ -180,6 +181,7 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                             }
                         }
                     }
+                    let document = FullTextDocument::new("typescript".to_string(), 0, source);
                     // 获取属性
                     let mut props = vec![];
                     let static_props = vec![];
@@ -190,12 +192,20 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                             } else {
                                 let name = ast::get_class_prop_name(&prop);
                                 if name.len() > 0 {
-                                    props.push(LibComponentProp { name });
+                                    props.push(LibComponentProp {
+                                        name,
+                                        location: Location {
+                                            uri: Url::from_file_path(path).unwrap(),
+                                            range: Range {
+                                                start: document.position_at(prop.span.lo.to_u32()),
+                                                end: document.position_at(prop.span.hi.to_u32()),
+                                            },
+                                        },
+                                    });
                                 }
                             }
                         }
                     }
-                    let document = FullTextDocument::new("typescript".to_string(), 0, source);
                     let name_location = Location {
                         uri: Url::from_file_path(path).unwrap(),
                         range: Range::new(

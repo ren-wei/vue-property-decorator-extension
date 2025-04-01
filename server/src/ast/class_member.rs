@@ -6,8 +6,10 @@ use tower_lsp::lsp_types::{MarkupContent, MarkupKind};
 use crate::renderer::multi_threaded_comment::MultiThreadedComments;
 
 use super::{
-    comment::get_markdown, decorator::is_specified_decorator, get_class_prop_pos,
-    prop_name::get_name_form_prop_name,
+    comment::get_markdown,
+    decorator::is_specified_decorator,
+    get_class_prop_pos,
+    prop_name::{get_name_form_prop_name, get_name_span_from_prop_name},
 };
 
 pub fn _filter_specified_prop<'a>(prop: &'a ClassMember, name: &str) -> Option<&'a ClassProp> {
@@ -108,6 +110,14 @@ pub fn get_class_member_pos(member: &ClassMember) -> BytePos {
             }
             pos
         }
+        _ => BytePos(0),
+    }
+}
+
+pub fn get_class_member_name_pos(member: &ClassMember) -> BytePos {
+    match member {
+        ClassMember::ClassProp(prop) => get_name_span_from_prop_name(&prop.key).lo,
+        ClassMember::PrivateProp(prop) => prop.key.span.lo,
         _ => BytePos(0),
     }
 }

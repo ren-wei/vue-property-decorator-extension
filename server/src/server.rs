@@ -586,6 +586,29 @@ impl LanguageServer for VueLspServer {
                                             definition =
                                                 Ok(Some(GotoDefinitionResponse::Scalar(location)));
                                         }
+                                    } else {
+                                        let tag = node.tag.as_ref().unwrap().clone();
+                                        let mut attr = None;
+                                        for (attr_name, node_attr) in &node.attributes {
+                                            if node_attr.offset <= offset
+                                                && offset < node_attr.offset + attr_name.len()
+                                            {
+                                                attr = Some(attr_name.clone());
+                                            }
+                                        }
+                                        if let Some(attr) = attr {
+                                            let location = renderer.get_component_prop_location(
+                                                uri,
+                                                &tag,
+                                                &attr,
+                                                text_document,
+                                            );
+                                            if let Some(location) = location {
+                                                definition = Ok(Some(
+                                                    GotoDefinitionResponse::Scalar(location),
+                                                ));
+                                            }
+                                        };
                                     }
                                 }
                             } else {

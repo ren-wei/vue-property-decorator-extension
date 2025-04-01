@@ -122,6 +122,62 @@ impl Renderer {
             range,
         })
     }
+
+    pub fn get_component_prop_location(
+        &self,
+        uri: &Url,
+        tag: &str,
+        attr: &str,
+        document: &FullTextDocument,
+    ) -> Option<Location> {
+        let attr = if attr.starts_with(":") {
+            &attr[1..]
+        } else {
+            attr
+        };
+        let (registered_uri, register) = self.render_cache.get_register(uri, tag)?;
+        let node = self.render_cache.get(registered_uri)?;
+        let range = match node {
+            RenderCache::VueRenderCache(cache) => {
+                let prop = cache.props.iter().find(|v| v.name == attr)?;
+                Range {
+                    start: cache.document.position_at(prop.range.0 as u32),
+                    end: cache.document.position_at(prop.range.1 as u32),
+                }
+            }
+            RenderCache::TsRenderCache(cache) => {
+                if register.export_name.is_none() {
+                    let prop = cache
+                        .ts_component
+                        .as_ref()?
+                        .props
+                        .iter()
+                        .find(|v| v.name == attr)?;
+                    Range {
+                        start: document.position_at(prop.range.0 as u32),
+                        end: document.position_at(prop.range.1 as u32),
+                    }
+                } else {
+                    // TODO: 根据 register.export_name 获取实际组件
+                    return None;
+                }
+            }
+            RenderCache::LibRenderCache(cache) => {
+                let component = cache.components.iter().find(|c| {
+                    register
+                        .export_name
+                        .as_ref()
+                        .is_some_and(|name| name == &c.name)
+                })?;
+                let prop = component.props.iter().find(|v| v.name == attr)?;
+                return Some(prop.location.clone());
+            }
+        };
+        Some(Location {
+            uri: registered_uri.clone(),
+            range,
+        })
+    }
 }
 
 /// tools
