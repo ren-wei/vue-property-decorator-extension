@@ -40,7 +40,9 @@ impl Renderer {
 
         self.init_tsconfig_paths(root_uri).await;
 
+        #[cfg(not(target_os = "windows"))]
         let node_modules_src_path = src_path.join("node_modules");
+        #[cfg(not(target_os = "windows"))]
         let node_modules_target_path = target_root_path.join("node_modules");
 
         let target_root_uri = Url::from_file_path(target_root_path).unwrap();
@@ -48,6 +50,7 @@ impl Renderer {
         self.render(root_uri, &target_root_uri).await;
 
         // 创建 node_modules 的链接
+        #[cfg(not(target_os = "windows"))]
         if node_modules_src_path.exists() {
             fs::symlink(node_modules_src_path, node_modules_target_path)
                 .await
