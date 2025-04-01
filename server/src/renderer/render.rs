@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use lsp_textdocument::FullTextDocument;
 use tokio::{
@@ -49,41 +49,9 @@ impl Renderer {
 
         // 创建 node_modules 的链接
         if node_modules_src_path.exists() {
-            if cfg!(target_os = "windows") {
-                fn copy_dir(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
-                    // 创建目标目录
-                    std::fs::create_dir_all(dst)?;
-
-                    // 使用 WalkDir 遍历源目录
-                    for entry in WalkDir::new(src) {
-                        let entry = entry?;
-                        let src_path = entry.path();
-                        let relative_path = src_path.strip_prefix(src).unwrap();
-                        let dst_path = dst.join(relative_path);
-
-                        if src_path.is_dir() {
-                            // 如果是目录，创建对应的目标目录
-                            std::fs::create_dir_all(&dst_path)?;
-                        } else {
-                            // 如果是文件，复制文件
-                            match std::fs::copy(&src_path, &dst_path) {
-                                Ok(_) => {}
-                                Err(ref e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                                    // 如果目标文件已存在，可根据需求进行处理，这里简单忽略
-                                }
-                                Err(e) => return Err(e),
-                            }
-                        }
-                    }
-                    Ok(())
-                }
-                copy_dir(&node_modules_src_path, &node_modules_target_path).unwrap();
-            } else {
-                #[cfg(not(target_os = "windows"))]
-                fs::symlink(node_modules_src_path, node_modules_target_path)
-                    .await
-                    .unwrap();
-            }
+            fs::symlink(node_modules_src_path, node_modules_target_path)
+                .await
+                .unwrap();
         }
     }
 
