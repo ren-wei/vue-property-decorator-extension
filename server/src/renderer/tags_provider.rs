@@ -38,33 +38,7 @@ impl Renderer {
                 RenderCache::VueRenderCache(cache) => {
                     let mut attributes = vec![];
                     for prop in &cache.props {
-                        attributes.push(IAttributeData {
-                            name: prop.name.clone(),
-                            description: prop.description.clone(),
-                            value_set: None,
-                            values: None,
-                            references: None,
-                        });
-                        attributes.push(IAttributeData {
-                            name: format!(":{}", prop.name),
-                            description: prop.description.clone(),
-                            value_set: None,
-                            values: None,
-                            references: None,
-                        });
-                    }
-                    tags.push(ITagData {
-                        name: register_name.clone(),
-                        description: cache.description.clone(),
-                        attributes,
-                        references: None,
-                        void: None,
-                    });
-                }
-                RenderCache::TsRenderCache(cache) => {
-                    if let Some(ts_component) = &cache.ts_component {
-                        let mut attributes = vec![];
-                        for prop in &ts_component.props {
+                        if prop.prop_params.is_some() {
                             attributes.push(IAttributeData {
                                 name: prop.name.clone(),
                                 description: prop.description.clone(),
@@ -79,6 +53,36 @@ impl Renderer {
                                 values: None,
                                 references: None,
                             });
+                        }
+                    }
+                    tags.push(ITagData {
+                        name: register_name.clone(),
+                        description: cache.description.clone(),
+                        attributes,
+                        references: None,
+                        void: None,
+                    });
+                }
+                RenderCache::TsRenderCache(cache) => {
+                    if let Some(ts_component) = &cache.ts_component {
+                        let mut attributes = vec![];
+                        for prop in &ts_component.props {
+                            if prop.prop_params.is_some() {
+                                attributes.push(IAttributeData {
+                                    name: prop.name.clone(),
+                                    description: prop.description.clone(),
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                });
+                                attributes.push(IAttributeData {
+                                    name: format!(":{}", prop.name),
+                                    description: prop.description.clone(),
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                });
+                            }
                         }
                         tags.push(ITagData {
                             name: register_name.clone(),

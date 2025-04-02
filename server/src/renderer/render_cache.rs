@@ -494,6 +494,15 @@ pub struct RenderCacheProp {
     pub name: String,
     pub range: (usize, usize),
     pub description: Option<Description>,
+    pub prop_params: Option<RenderCachePropParam>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct RenderCachePropParam {
+    pub typ: Option<String>,
+    /// 是否存在 default
+    pub default: bool,
+    pub required: bool,
 }
 
 #[derive(PartialEq)]

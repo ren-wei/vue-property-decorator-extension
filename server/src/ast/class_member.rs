@@ -8,7 +8,7 @@ use crate::renderer::multi_threaded_comment::MultiThreadedComments;
 use super::{
     comment::get_markdown,
     decorator::is_specified_decorator,
-    get_class_prop_pos,
+    get_class_prop_pos, get_decorator_prop_params,
     prop_name::{get_name_form_prop_name, get_name_span_from_prop_name},
 };
 
@@ -119,5 +119,32 @@ pub fn get_class_member_name_pos(member: &ClassMember) -> BytePos {
         ClassMember::ClassProp(prop) => get_name_span_from_prop_name(&prop.key).lo,
         ClassMember::PrivateProp(prop) => prop.key.span.lo,
         _ => BytePos(0),
+    }
+}
+
+/// 获取属性参数
+/// 返回: (typ, default, required)
+pub fn get_class_member_prop_params(
+    member: &ClassMember,
+    source: &str,
+) -> Option<(Option<String>, bool, bool)> {
+    match member {
+        ClassMember::ClassProp(prop) => {
+            if prop.decorators.len() == 1 {
+                let decorator = &prop.decorators[0];
+                get_decorator_prop_params(decorator, source)
+            } else {
+                None
+            }
+        }
+        ClassMember::PrivateProp(prop) => {
+            if prop.decorators.len() == 1 {
+                let decorator = &prop.decorators[0];
+                get_decorator_prop_params(decorator, source)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }

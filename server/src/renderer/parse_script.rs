@@ -4,7 +4,10 @@ use swc_ecma_ast::{ClassMember, Module};
 
 use crate::ast;
 
-use super::{multi_threaded_comment::MultiThreadedComments, render_cache::RenderCacheProp};
+use super::{
+    multi_threaded_comment::MultiThreadedComments,
+    render_cache::{RenderCacheProp, RenderCachePropParam},
+};
 
 /// 解析脚本，输出 props, render_insert_offset, extends_component, registers
 pub fn parse_script(source: &str, start_pos: usize, end_pos: usize) -> Option<ParseScriptResult> {
@@ -42,10 +45,17 @@ pub fn parse_module(
             let end = start + name.len();
             let description =
                 ast::get_class_member_description(member, comments, &class_name, source);
+            let prop_params =
+                ast::get_class_member_prop_params(member, source).map(|v| RenderCachePropParam {
+                    typ: v.0,
+                    default: v.1,
+                    required: v.2,
+                });
             props.push(RenderCacheProp {
                 name,
                 range: (start, end),
                 description,
+                prop_params,
             });
             // 获取安全更新范围
             match member {
