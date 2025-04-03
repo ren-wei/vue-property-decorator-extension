@@ -27,6 +27,7 @@ type RRGraph = Graph<RenderCache, Relationship>;
 pub struct RenderCacheGraph {
     graph: RRGraph,
     idx_map: HashMap<Url, NodeIndex>,
+    url_map: HashMap<NodeIndex, Url>,
     /// 未加入的边
     virtual_edges: Vec<(Url, Url, Relationship)>,
 }
@@ -36,6 +37,7 @@ impl RenderCacheGraph {
         RenderCacheGraph {
             graph: Graph::new(),
             idx_map: HashMap::new(),
+            url_map: HashMap::new(),
             virtual_edges: vec![],
         }
     }
@@ -60,6 +62,7 @@ impl RenderCacheGraph {
         } else {
             let idx = self.graph.add_node(cache);
             self.idx_map.insert(uri.clone(), idx);
+            self.url_map.insert(idx, uri.clone());
         }
     }
 
@@ -98,7 +101,7 @@ impl RenderCacheGraph {
 
     /// 移除节点下游边
     pub fn remove_outgoing_edge(&mut self, uri: &Url) {
-        let idx = *self.idx_map.get(uri).unwrap();
+        let idx = self.idx_map[uri];
         let edges = self
             .graph
             .edges_directed(idx, Direction::Outgoing)
@@ -111,10 +114,11 @@ impl RenderCacheGraph {
 
     /// 移除节点，同时移除节点上的边，同时删除对应的文件
     pub fn remove_node(&mut self, uri: &Url, root_uri: &Url, target_root_uri: &Url) -> RenderCache {
-        let idx = *self.idx_map.get(uri).unwrap();
+        let idx = self.idx_map[uri];
         let cache = self.graph.remove_node(idx).unwrap();
         self.remove_node_file(uri, root_uri, target_root_uri);
         self.idx_map.remove(uri);
+        self.url_map.remove(&idx);
         cache
     }
 
@@ -127,7 +131,7 @@ impl RenderCacheGraph {
 
     /// 更新上游节点版本
     pub fn update_incoming_node_version(&mut self, uri: &Url) {
-        let idx = *self.idx_map.get(uri).unwrap();
+        let idx = self.idx_map[uri];
         let edges = self.graph.edges_directed(idx, Direction::Incoming);
         let mut nodes = vec![];
         for edge in edges {
@@ -135,22 +139,12 @@ impl RenderCacheGraph {
         }
         debug!("update_incoming_node_version: {}", nodes.len());
         for node in nodes {
-            debug!("update version: {}", self.get_node_uri(node).path());
+            debug!("update version: {}", self.url_map[&node].path());
             let cache = self.graph.node_weight_mut(node).unwrap();
             if let Some(version) = cache.get_version() {
                 cache.update_version(version + 1);
             }
         }
-    }
-
-    /// 根据索引反向查找 uri
-    fn get_node_uri(&self, idx: NodeIndex) -> &Url {
-        for (key, value) in &self.idx_map {
-            if *value == idx {
-                return key;
-            }
-        }
-        panic!("get_node_uri not found");
     }
 }
 
@@ -161,7 +155,7 @@ impl RenderCacheGraph {
         for node in self.graph.node_indices() {
             let cache = &self.graph[node];
             if let RenderCache::VueRenderCache(_) = cache {
-                let uri = self.get_node_uri(node);
+                let uri = &self.url_map[&node];
                 let content = self.get_node_render_content(uri).unwrap();
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
                 tokio::spawn(async {
@@ -173,11 +167,11 @@ impl RenderCacheGraph {
 
     /// 渲染单个节点到文件系统
     pub fn render_node(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
-        let node = *self.idx_map.get(uri).unwrap();
+        let node = self.idx_map[uri];
         let cache = &self.graph[node];
         match cache {
             RenderCache::VueRenderCache(_) => {
-                let uri = self.get_node_uri(node);
+                let uri = &self.url_map[&node];
                 let content = self.get_node_render_content(uri).unwrap();
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
                 debug!("render_node: {}", target_path.to_string_lossy());
@@ -187,7 +181,7 @@ impl RenderCacheGraph {
             }
             RenderCache::TsRenderCache(_) => {
                 // 如果不存在硬链接，那么增加
-                let uri = self.get_node_uri(node);
+                let uri = &self.url_map[&node];
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
                 if !target_path.exists() {
                     let src_path = uri.to_file_path().unwrap();
@@ -204,12 +198,12 @@ impl RenderCacheGraph {
     /// 如果是 vue 节点，那么获取渲染后的内容
     /// 如果是 ts 节点，那么返回 None
     pub fn get_node_render_content(&self, uri: &Url) -> Option<String> {
-        let node = *self.idx_map.get(uri).unwrap();
+        let node = self.idx_map[uri];
         let cache = &self.graph[node];
         if let RenderCache::VueRenderCache(cache) = cache {
             if let Some(script) = &cache.script {
                 // 获取继承组件的 props
-                let extends_props = RenderCacheGraph::get_extends_props(&self.graph, node);
+                let extends_props = self.get_extends_props(uri);
                 let mut props = extends_props
                     .iter()
                     .map(|v| &v.name[..])
@@ -233,8 +227,8 @@ impl RenderCacheGraph {
 
     /// 删除节点对应的文件
     fn remove_node_file(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
-        let node = *self.idx_map.get(uri).unwrap();
-        let uri = self.get_node_uri(node);
+        let node = self.idx_map[uri];
+        let uri = &self.url_map[&node];
         let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
         tokio::spawn(async {
             fs::remove_file(target_path).await.unwrap();
@@ -246,7 +240,7 @@ impl RenderCacheGraph {
 impl RenderCacheGraph {
     /// 移除继承关系
     pub fn remove_extends_edge(&mut self, uri: &Url) {
-        let idx = *self.idx_map.get(uri).unwrap();
+        let idx = self.idx_map[uri];
         let edge = self
             .graph
             .edges_directed(idx, Direction::Outgoing)
@@ -258,21 +252,22 @@ impl RenderCacheGraph {
     }
 
     /// 获取当前节点的所有继承属性
-    fn get_extends_props(graph: &RRGraph, node: NodeIndex) -> Vec<RenderCacheProp> {
+    fn get_extends_props(&self, uri: &Url) -> Vec<RenderCacheProp> {
+        let node = self.idx_map[uri];
         let mut extends_props = vec![];
-        let mut next_node = RenderCacheGraph::get_extends_node(&graph, node);
+        let mut next_node = self.get_extends_node(node);
         while let Some((cur_node, export_name)) = next_node {
-            match &graph[cur_node] {
+            match &self.graph[cur_node] {
                 RenderCache::VueRenderCache(cache) => {
                     extends_props.append(&mut cache.props.clone());
-                    next_node = RenderCacheGraph::get_extends_node(&graph, cur_node);
+                    next_node = self.get_extends_node(cur_node);
                 }
                 RenderCache::TsRenderCache(cache) => {
                     // 尝试从当前文件获取下一个节点
                     if let Some(ts_component) = &cache.ts_component {
                         if export_name == None {
                             extends_props.append(&mut ts_component.props.clone());
-                            next_node = RenderCacheGraph::get_extends_node(&graph, cur_node);
+                            next_node = self.get_extends_node(cur_node);
                             continue;
                         } else if cache.local_exports.contains(&export_name) {
                             // 从当前定义，但是不是组件，那么直接退出
@@ -280,16 +275,19 @@ impl RenderCacheGraph {
                         }
                     }
                     // 尝试从转换关系获取下一个节点
-                    if let Some((transfer_node, export_name)) =
-                        RenderCacheGraph::get_transfer_node(&graph, cur_node, &export_name)
+                    if let Some((transfer_url, export_name)) =
+                        self.get_transfer_node(&self.url_map[&cur_node], &export_name)
                     {
+                        let transfer_node = self.idx_map[transfer_url];
                         next_node = Some((transfer_node, export_name));
                         continue;
                     }
                     // 尝试从星号导出获取下一个节点
-                    if let Some((node, export_name)) =
-                        RenderCacheGraph::get_node_from_star_export(&graph, cur_node, &export_name)
-                    {
+                    if let Some((node, export_name)) = RenderCacheGraph::get_node_from_star_export(
+                        &self.graph,
+                        cur_node,
+                        &export_name,
+                    ) {
                         next_node = Some((node, export_name));
                     } else {
                         // 未找到
@@ -305,8 +303,8 @@ impl RenderCacheGraph {
     }
 
     /// 获取继承的节点
-    fn get_extends_node(graph: &RRGraph, node: NodeIndex) -> Option<(NodeIndex, Option<String>)> {
-        let mut edges = graph.edges_directed(node, Direction::Outgoing);
+    fn get_extends_node(&self, node: NodeIndex) -> Option<(NodeIndex, Option<String>)> {
+        let mut edges = self.graph.edges_directed(node, Direction::Outgoing);
         let extends_edge = edges.find(|edge| edge.weight().is_extends())?;
         let export_name = extends_edge.weight().as_extends().export_name.clone();
         let extends_node = extends_edge.target();
@@ -318,7 +316,7 @@ impl RenderCacheGraph {
 impl RenderCacheGraph {
     /// 移除转换关系
     pub fn remove_transfers_edges(&mut self, uri: &Url) {
-        let idx = *self.idx_map.get(uri).unwrap();
+        let idx = self.idx_map[uri];
         let edges = self
             .graph
             .edges_directed(idx, Direction::Outgoing)
@@ -330,17 +328,18 @@ impl RenderCacheGraph {
         }
     }
 
-    /// 从转换关系获取节点
-    fn get_transfer_node(
-        graph: &RRGraph,
-        node: NodeIndex,
+    /// 从转换关系获取节点，返回 transfer_node 和 export_name
+    pub fn get_transfer_node(
+        &self,
+        uri: &Url,
         export_name: &Option<String>,
-    ) -> Option<(NodeIndex, Option<String>)> {
-        let edges = graph.edges_directed(node, Direction::Outgoing);
+    ) -> Option<(&Url, Option<String>)> {
+        let node = self.idx_map[uri];
+        let edges = self.graph.edges_directed(node, Direction::Outgoing);
         for edge in edges {
             if let Relationship::TransferRelationship(relation) = edge.weight() {
                 if &relation.local == export_name {
-                    return Some((edge.target(), relation.export_name.clone()));
+                    return Some((&self.url_map[&edge.target()], relation.export_name.clone()));
                 }
             }
         }
@@ -362,10 +361,7 @@ impl RenderCacheGraph {
 impl RenderCacheGraph {
     /// 获取注册的名称及注册组件的节点数据
     /// 返回值：(registered_name, export_name, prop, cache)
-    pub fn get_registers(
-        &self,
-        uri: &Url,
-    ) -> Vec<(String, Option<String>, Option<String>, &RenderCache)> {
+    pub fn get_registers(&self, uri: &Url) -> Vec<(String, Option<String>, Option<String>, &Url)> {
         let node = self.idx_map[uri];
         let edges = self
             .graph
@@ -379,7 +375,7 @@ impl RenderCacheGraph {
                 register.registered_name.clone(),
                 register.export_name.clone(),
                 register.prop.clone(),
-                &self.graph[target],
+                &self.url_map[&target],
             ));
         }
         caches
@@ -397,15 +393,12 @@ impl RenderCacheGraph {
             .edges_directed(node, Direction::Outgoing)
             .filter(|edge| edge.weight().is_register());
         let edge = edges.find(|e| e.weight().as_register().registered_name == registered_name)?;
-        Some((
-            self.get_node_uri(edge.target()),
-            edge.weight().as_register(),
-        ))
+        Some((&self.url_map[&edge.target()], edge.weight().as_register()))
     }
 
     /// 移除注册关系
     pub fn remove_registers_edges(&mut self, uri: &Url) {
-        let idx = *self.idx_map.get(uri).unwrap();
+        let idx = self.idx_map[uri];
         let edges = self
             .graph
             .edges_directed(idx, Direction::Outgoing)
