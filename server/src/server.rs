@@ -31,6 +31,7 @@ use tracing::{debug, info, instrument};
 
 use crate::renderer::{Mapping, PositionType, Renderer};
 use crate::ts_server::TsServer;
+use crate::vue_data::VueDataProvider;
 
 pub struct VueLspServer {
     is_shared: bool,
@@ -39,6 +40,7 @@ pub struct VueLspServer {
     html_server: Mutex<HTMLLanguageService>,
     ts_server: Arc<RwLock<TsServer>>,
     renderer: Arc<Mutex<Renderer>>,
+    vue_data_provider: VueDataProvider,
 }
 
 impl VueLspServer {
@@ -60,6 +62,7 @@ impl VueLspServer {
         let html_server = Mutex::new(HTMLLanguageService::new(
             &HTMLLanguageServiceOptions::default(),
         ));
+        let vue_data_provider = VueDataProvider::new();
         VueLspServer {
             is_shared,
             text_documents,
@@ -67,6 +70,7 @@ impl VueLspServer {
             html_server,
             ts_server,
             renderer,
+            vue_data_provider,
         }
     }
 
@@ -79,7 +83,13 @@ impl VueLspServer {
         };
 
         let mut data_manager = self.data_manager.lock().await;
-        data_manager.set_data_providers(true, vec![Box::new(tags_provider.clone())]);
+        data_manager.set_data_providers(
+            true,
+            vec![
+                Box::new(self.vue_data_provider.clone()),
+                Box::new(tags_provider.clone()),
+            ],
+        );
 
         let mut html_server = self.html_server.lock().await;
         html_server.set_completion_participants(vec![Box::new(tags_provider)]);
