@@ -1,6 +1,6 @@
 {
   "name": "vue-property-decorator-extension",
-  "displayName": "Vue Decorator LSP Extension",
+  "displayName": "Vue Decorator Language Server",
   "description": "This is a high-performance LSP extension of vscode that is support `vue2 + typescript + decorator` ( `vue-property-decorator`).",
   "author": "ren-wei",
   "license": "MIT",
