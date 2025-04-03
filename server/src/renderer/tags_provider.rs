@@ -33,40 +33,13 @@ impl Renderer {
         let mut tags = vec![];
         // 获取当前节点注册的组件
         let registers = self.render_cache.get_registers(uri);
-        for (register_name, export_name, prop, cache) in registers {
-            match cache {
-                RenderCache::VueRenderCache(cache) => {
-                    let mut attributes = vec![];
-                    for prop in &cache.props {
-                        if prop.prop_params.is_some() {
-                            attributes.push(IAttributeData {
-                                name: prop.name.clone(),
-                                description: prop.description.clone(),
-                                value_set: None,
-                                values: None,
-                                references: None,
-                            });
-                            attributes.push(IAttributeData {
-                                name: format!(":{}", prop.name),
-                                description: prop.description.clone(),
-                                value_set: None,
-                                values: None,
-                                references: None,
-                            });
-                        }
-                    }
-                    tags.push(ITagData {
-                        name: register_name.clone(),
-                        description: cache.description.clone(),
-                        attributes,
-                        references: None,
-                        void: None,
-                    });
-                }
-                RenderCache::TsRenderCache(cache) => {
-                    if let Some(ts_component) = &cache.ts_component {
+        for (register_name, mut export_name, prop, mut register_uri) in registers {
+            let mut cache = &self.render_cache[register_uri];
+            loop {
+                match cache {
+                    RenderCache::VueRenderCache(cache) => {
                         let mut attributes = vec![];
-                        for prop in &ts_component.props {
+                        for prop in &cache.props {
                             if prop.prop_params.is_some() {
                                 attributes.push(IAttributeData {
                                     name: prop.name.clone(),
@@ -86,52 +59,97 @@ impl Renderer {
                         }
                         tags.push(ITagData {
                             name: register_name.clone(),
-                            description: ts_component.description.clone(),
+                            description: cache.description.clone(),
                             attributes,
                             references: None,
                             void: None,
                         });
+                        break;
                     }
-                }
-                RenderCache::LibRenderCache(lib_cache) => {
-                    // 从组件库节点获取标签定义
-                    let component = lib_cache
-                        .components
-                        .iter()
-                        .find(|c| export_name.as_ref().is_some_and(|v| *v == c.name));
-                    if let Some(mut component) = component {
-                        if let Some(prop) = prop {
-                            let target = component.static_props.iter().find(|c| c.name == prop);
-                            if let Some(target) = target {
-                                component = target.as_ref();
+                    RenderCache::TsRenderCache(ts_cache) => {
+                        if let Some(ts_component) = &ts_cache.ts_component {
+                            let mut attributes = vec![];
+                            for prop in &ts_component.props {
+                                if prop.prop_params.is_some() {
+                                    attributes.push(IAttributeData {
+                                        name: prop.name.clone(),
+                                        description: prop.description.clone(),
+                                        value_set: None,
+                                        values: None,
+                                        references: None,
+                                    });
+                                    attributes.push(IAttributeData {
+                                        name: format!(":{}", prop.name),
+                                        description: prop.description.clone(),
+                                        value_set: None,
+                                        values: None,
+                                        references: None,
+                                    });
+                                }
+                            }
+                            tags.push(ITagData {
+                                name: register_name.clone(),
+                                description: ts_component.description.clone(),
+                                attributes,
+                                references: None,
+                                void: None,
+                            });
+                            break;
+                        } else {
+                            if let Some((transfer_uri, name)) = self
+                                .render_cache
+                                .get_transfer_node(register_uri, &export_name)
+                            {
+                                cache = &self.render_cache[transfer_uri];
+                                register_uri = transfer_uri;
+                                export_name = name;
                             } else {
-                                continue;
+                                break;
                             }
                         }
-                        let mut attributes = vec![];
-                        for prop in &component.props {
-                            attributes.push(IAttributeData {
-                                name: prop.name.clone(),
-                                description: None,
-                                value_set: None,
-                                values: None,
+                    }
+                    RenderCache::LibRenderCache(lib_cache) => {
+                        // 从组件库节点获取标签定义
+                        let component = lib_cache
+                            .components
+                            .iter()
+                            .find(|c| export_name.as_ref().is_some_and(|v| *v == c.name));
+                        if let Some(mut component) = component {
+                            if let Some(prop) = &prop {
+                                let target =
+                                    component.static_props.iter().find(|c| &c.name == prop);
+                                if let Some(target) = target {
+                                    component = target.as_ref();
+                                } else {
+                                    continue;
+                                }
+                            }
+                            let mut attributes = vec![];
+                            for prop in &component.props {
+                                attributes.push(IAttributeData {
+                                    name: prop.name.clone(),
+                                    description: None,
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                });
+                                attributes.push(IAttributeData {
+                                    name: format!(":{}", prop.name),
+                                    description: None,
+                                    value_set: None,
+                                    values: None,
+                                    references: None,
+                                });
+                            }
+                            tags.push(ITagData {
+                                name: register_name.clone(),
+                                description: component.description.clone(),
+                                attributes,
                                 references: None,
-                            });
-                            attributes.push(IAttributeData {
-                                name: format!(":{}", prop.name),
-                                description: None,
-                                value_set: None,
-                                values: None,
-                                references: None,
+                                void: None,
                             });
                         }
-                        tags.push(ITagData {
-                            name: register_name.clone(),
-                            description: component.description.clone(),
-                            attributes,
-                            references: None,
-                            void: None,
-                        });
+                        break;
                     }
                 }
             }
