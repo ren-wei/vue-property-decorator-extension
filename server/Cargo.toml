@@ -15,7 +15,7 @@ tracing = "0.1.40"
 async-lsp-client = { version = "0.2.1", features = ["tracing"] }
 walkdir = "2.5.0"
 lazy_static = "1.5.0"
-html-languageservice = { version = "0.7.4", features = ["full"] }
+html-languageservice = { version = "0.7.5", features = ["full"] }
 swc_ecma_parser = { version = "6.0.0", features = ["typescript"] }
 swc_common = { version = "5.0.0", features = ["concurrent"] }
 swc_ecma_ast = { version = "5.0.0", features = ["serde-impl"] }
