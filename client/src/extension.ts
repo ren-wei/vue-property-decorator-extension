@@ -32,7 +32,7 @@ export function activate(context: ExtensionContext) {
     // Create the language client and start the client.
     client = new LanguageClient(
         "vue-property-decorator-extension",
-        "vue-property-decorator-extension",
+        "Vue Decorator Language Service",
         serverOptions,
         clientOptions
     );
