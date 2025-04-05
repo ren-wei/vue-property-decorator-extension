@@ -18,6 +18,8 @@ use super::Renderer;
 
 /// ts 文件的渲染缓存
 pub struct TsRenderCache {
+    /// ts 文件的文档
+    pub document: FullTextDocument,
     /// ts 文件中定义的组件
     pub ts_component: Option<TsComponent>,
     /// 从当前文件定义并导出的名称

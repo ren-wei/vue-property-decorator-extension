@@ -391,6 +391,7 @@ impl Renderer {
         self.render_cache.add_node(
             uri,
             RenderCache::TsRenderCache(TsRenderCache {
+                document,
                 ts_component,
                 local_exports: result.local_exports,
             }),

@@ -92,31 +92,40 @@ impl Renderer {
 
     /// 获取标签对应的组件位置
     pub fn get_component_location(&self, uri: &Url, tag: &str) -> Option<Location> {
-        let (registered_uri, register) = self.render_cache.get_register(uri, tag)?;
-        let node = self.render_cache.get(registered_uri)?;
-        let range = match node {
-            RenderCache::VueRenderCache(cache) => Range {
-                start: cache.document.position_at(cache.name_range.0 as u32),
-                end: cache.document.position_at(cache.name_range.1 as u32),
-            },
-            RenderCache::TsRenderCache(cache) => {
-                if register.export_name.is_none() {
-                    cache.ts_component.as_ref()?.name_range
-                } else {
-                    // TODO: 根据 register.export_name 获取实际组件
-                    Range::default()
+        let (mut registered_uri, register) = self.render_cache.get_register(uri, tag)?;
+        let mut export_name = register.export_name.clone();
+        let range;
+        loop {
+            let node = self.render_cache.get(registered_uri)?;
+            match node {
+                RenderCache::VueRenderCache(cache) => {
+                    range = Range {
+                        start: cache.document.position_at(cache.name_range.0 as u32),
+                        end: cache.document.position_at(cache.name_range.1 as u32),
+                    };
+                    break;
                 }
-            }
-            RenderCache::LibRenderCache(cache) => {
-                let component = cache.components.iter().find(|c| {
-                    register
-                        .export_name
-                        .as_ref()
-                        .is_some_and(|name| name == &c.name)
-                })?;
-                return Some(component.name_location.clone());
-            }
-        };
+                RenderCache::TsRenderCache(cache) => {
+                    if export_name.is_none() && cache.ts_component.is_some() {
+                        range = cache.ts_component.as_ref()?.name_range;
+                        break;
+                    } else {
+                        let (transfer_uri, export) = self
+                            .render_cache
+                            .get_transfer_node(registered_uri, &export_name)?;
+                        registered_uri = transfer_uri;
+                        export_name = export;
+                    }
+                }
+                RenderCache::LibRenderCache(cache) => {
+                    let component = cache
+                        .components
+                        .iter()
+                        .find(|c| export_name.as_ref().is_some_and(|name| name == &c.name))?;
+                    return Some(component.name_location.clone());
+                }
+            };
+        }
         Some(Location {
             uri: registered_uri.clone(),
             range,
@@ -128,51 +137,57 @@ impl Renderer {
         uri: &Url,
         tag: &str,
         attr: &str,
-        document: &FullTextDocument,
     ) -> Option<Location> {
         let attr = if attr.starts_with(":") {
             &attr[1..]
         } else {
             attr
         };
-        let (registered_uri, register) = self.render_cache.get_register(uri, tag)?;
-        let node = self.render_cache.get(registered_uri)?;
-        let range = match node {
-            RenderCache::VueRenderCache(cache) => {
-                let prop = cache.props.iter().find(|v| v.name == attr)?;
-                Range {
-                    start: cache.document.position_at(prop.range.0 as u32),
-                    end: cache.document.position_at(prop.range.1 as u32),
+        let (mut registered_uri, register) = self.render_cache.get_register(uri, tag)?;
+        let mut export_name = register.export_name.clone();
+        let range;
+        loop {
+            let node = self.render_cache.get(registered_uri)?;
+            match node {
+                RenderCache::VueRenderCache(cache) => {
+                    let prop = cache.props.iter().find(|v| v.name == attr)?;
+                    range = Range {
+                        start: cache.document.position_at(prop.range.0 as u32),
+                        end: cache.document.position_at(prop.range.1 as u32),
+                    };
+                    break;
                 }
-            }
-            RenderCache::TsRenderCache(cache) => {
-                if register.export_name.is_none() {
-                    let prop = cache
-                        .ts_component
-                        .as_ref()?
-                        .props
-                        .iter()
-                        .find(|v| v.name == attr)?;
-                    Range {
-                        start: document.position_at(prop.range.0 as u32),
-                        end: document.position_at(prop.range.1 as u32),
+                RenderCache::TsRenderCache(cache) => {
+                    if export_name.is_none() && cache.ts_component.is_some() {
+                        let prop = cache
+                            .ts_component
+                            .as_ref()?
+                            .props
+                            .iter()
+                            .find(|v| v.name == attr)?;
+                        range = Range {
+                            start: cache.document.position_at(prop.range.0 as u32),
+                            end: cache.document.position_at(prop.range.1 as u32),
+                        };
+                        break;
+                    } else {
+                        let (transfer_uri, export) = self
+                            .render_cache
+                            .get_transfer_node(registered_uri, &export_name)?;
+                        registered_uri = transfer_uri;
+                        export_name = export;
                     }
-                } else {
-                    // TODO: 根据 register.export_name 获取实际组件
-                    return None;
                 }
-            }
-            RenderCache::LibRenderCache(cache) => {
-                let component = cache.components.iter().find(|c| {
-                    register
-                        .export_name
-                        .as_ref()
-                        .is_some_and(|name| name == &c.name)
-                })?;
-                let prop = component.props.iter().find(|v| v.name == attr)?;
-                return Some(prop.location.clone());
-            }
-        };
+                RenderCache::LibRenderCache(cache) => {
+                    let component = cache
+                        .components
+                        .iter()
+                        .find(|c| export_name.as_ref().is_some_and(|name| name == &c.name))?;
+                    let prop = component.props.iter().find(|v| v.name == attr)?;
+                    return Some(prop.location.clone());
+                }
+            };
+        }
         Some(Location {
             uri: registered_uri.clone(),
             range,

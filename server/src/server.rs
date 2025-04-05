@@ -607,12 +607,8 @@ impl LanguageServer for VueLspServer {
                                             }
                                         }
                                         if let Some(attr) = attr {
-                                            let location = renderer.get_component_prop_location(
-                                                uri,
-                                                &tag,
-                                                &attr,
-                                                text_document,
-                                            );
+                                            let location = renderer
+                                                .get_component_prop_location(uri, &tag, &attr);
                                             if let Some(location) = location {
                                                 definition = Ok(Some(
                                                     GotoDefinitionResponse::Scalar(location),
