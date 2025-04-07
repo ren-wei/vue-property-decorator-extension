@@ -27,7 +27,7 @@ pub struct VueRenderCache {
     // 解析模版
     pub name_range: (usize, usize),
     pub description: Option<Description>,
-    pub template_compile_result: String,
+    pub template_compile_result: FullTextDocument,
     pub mapping: CompileMapping,
     /// 解析脚本得到的属性
     pub props: Vec<RenderCacheProp>,
@@ -90,8 +90,13 @@ impl VueRenderCache {
                     // 进行模版编译
                     let (template_compile_result, mapping) =
                         template_compile::template_compile(&template, source);
-                    let old_template_compile_result = self.template_compile_result.clone();
-                    self.template_compile_result = template_compile_result;
+                    let old_template_compile_result_chars_count =
+                        self.template_compile_result
+                            .get_content(None)
+                            .chars()
+                            .count() as u32;
+                    self.template_compile_result =
+                        FullTextDocument::new("typescript".to_string(), 0, template_compile_result);
                     self.mapping = mapping;
                     // template_compile_result 插入的行
                     let line = self
@@ -117,11 +122,11 @@ impl VueRenderCache {
                                     start: Position { line, character: 0 },
                                     end: Position {
                                         line,
-                                        character: old_template_compile_result.len() as u32,
+                                        character: old_template_compile_result_chars_count,
                                     },
                                 }),
-                                range_length: Some(old_template_compile_result.len() as u32),
-                                text: self.template_compile_result.clone(),
+                                range_length: Some(old_template_compile_result_chars_count),
+                                text: self.template_compile_result.get_content(None).to_string(),
                             },
                         ],
                         is_change: false,
@@ -554,8 +559,8 @@ mod tests {
         assert_eq!(cache.name_range, expected.name_range);
         assert_eq!(cache.description, expected.description);
         assert_eq!(
-            cache.template_compile_result,
-            expected.template_compile_result
+            cache.template_compile_result.get_content(None),
+            expected.template_compile_result.get_content(None)
         );
         assert_eq!(cache.mapping, expected.mapping);
         assert_eq!(cache.props, expected.props);
@@ -595,7 +600,11 @@ mod tests {
                 result.name_span.hi.to_usize(),
             ),
             description: result.description,
-            template_compile_result,
+            template_compile_result: FullTextDocument::new(
+                "typescript".to_string(),
+                0,
+                template_compile_result,
+            ),
             mapping,
             props: result.props,
             render_insert_offset: result.render_insert_offset,
@@ -608,7 +617,7 @@ mod tests {
             combined_rendered_results::combined_rendered_results(
                 script.start_tag_end.unwrap(),
                 script.end_tag_start.unwrap(),
-                &cache.template_compile_result,
+                &cache.template_compile_result.get_content(None),
                 &cache.props.iter().map(|v| &v.name[..]).collect::<Vec<_>>(),
                 cache.render_insert_offset,
                 cache.document.get_content(None),
