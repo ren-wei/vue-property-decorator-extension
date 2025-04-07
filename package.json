@@ -149,7 +149,8 @@
     "watch": "tsc -b -w",
     "lint": "eslint ./client/src --ext .ts,.tsx",
     "postinstall": "cd client && npm install && cd ..",
-    "prebuild": "cd server && cargo test && cd ..",
+    "test": "cd server && cargo test && cd ..",
+    "prebuild": "npm run test",
     "build": "cd server && cargo build --release && cargo build --release --target x86_64-pc-windows-gnu && cargo build --release --target x86_64-unknown-linux-musl && cd .. && npx vsce package"
   },
   "devDependencies": {
