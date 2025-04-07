@@ -1,4 +1,3 @@
-use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::{Position, Range, Url};
 
 use super::{render_cache::RenderCache, Renderer};
@@ -31,12 +30,7 @@ impl Mapping for Renderer {
                 .line
                 + 1;
             if line == position.line {
-                let compile_document = FullTextDocument::new(
-                    "typescript".to_string(),
-                    0,
-                    cache.template_compile_result.clone(),
-                );
-                let offset = compile_document.offset_at(Position {
+                let offset = cache.template_compile_result.offset_at(Position {
                     line: 0,
                     character: position.character,
                 }) as usize;
@@ -66,14 +60,9 @@ impl Mapping for Renderer {
                 .position_at(cache.render_insert_offset as u32 + 1)
                 .line
                 + 1;
-            let compile_document = FullTextDocument::new(
-                "typescript".to_string(),
-                0,
-                cache.template_compile_result.clone(),
-            );
             Some(Position {
                 line,
-                character: compile_document.position_at(offset).character,
+                character: cache.template_compile_result.position_at(offset).character,
             })
         } else {
             None

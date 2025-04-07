@@ -212,7 +212,7 @@ impl RenderCacheGraph {
                 Some(combined_rendered_results::combined_rendered_results(
                     script.start_tag_end.unwrap(),
                     script.end_tag_start.unwrap(),
-                    &cache.template_compile_result,
+                    &cache.template_compile_result.get_content(None),
                     &props,
                     cache.render_insert_offset,
                     cache.document.get_content(None),

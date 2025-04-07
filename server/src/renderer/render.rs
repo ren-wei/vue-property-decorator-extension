@@ -361,7 +361,11 @@ impl Renderer {
                 description: result.description,
                 props: result.props,
                 render_insert_offset: result.render_insert_offset,
-                template_compile_result: result.template_compile_result,
+                template_compile_result: FullTextDocument::new(
+                    "typescript".to_string(),
+                    0,
+                    result.template_compile_result,
+                ),
                 mapping: result.mapping,
                 safe_update_range: result.safe_update_range,
             }),
