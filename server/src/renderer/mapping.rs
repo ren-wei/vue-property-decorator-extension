@@ -1,3 +1,4 @@
+use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::{Position, Range, Url};
 
 use super::{render_cache::RenderCache, Renderer};
@@ -30,7 +31,16 @@ impl Mapping for Renderer {
                 .line
                 + 1;
             if line == position.line {
-                let original = self.get_original_offset(uri, position.character as usize)? as u32;
+                let compile_document = FullTextDocument::new(
+                    "typescript".to_string(),
+                    0,
+                    cache.template_compile_result.clone(),
+                );
+                let offset = compile_document.offset_at(Position {
+                    line: 0,
+                    character: position.character,
+                }) as usize;
+                let original = self.get_original_offset(uri, offset)? as u32;
                 Some(document.position_at(original))
             } else {
                 None
@@ -50,13 +60,21 @@ impl Mapping for Renderer {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             let document = &cache.document;
-            let character =
-                self.get_mapping_character(uri, document.offset_at(*position) as usize)? as u32;
+            let offset =
+                self.get_mapping_offset(uri, document.offset_at(*position) as usize)? as u32;
             let line = document
                 .position_at(cache.render_insert_offset as u32 + 1)
                 .line
                 + 1;
-            Some(Position { line, character })
+            let compile_document = FullTextDocument::new(
+                "typescript".to_string(),
+                0,
+                cache.template_compile_result.clone(),
+            );
+            Some(Position {
+                line,
+                character: compile_document.position_at(offset).character,
+            })
         } else {
             None
         }
@@ -115,10 +133,10 @@ impl Renderer {
         return None;
     }
 
-    /// 获取编译后的所在列的字符位置，如果不在 template 范围内返回 None
+    /// 获取编译后的所在的字节位置，如果不在 template 范围内返回 None
     ///
     /// `offset` 是模版上的位置
-    fn get_mapping_character(&self, uri: &Url, offset: usize) -> Option<usize> {
+    fn get_mapping_offset(&self, uri: &Url, offset: usize) -> Option<usize> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             if cache.mapping.len() == 0 {
