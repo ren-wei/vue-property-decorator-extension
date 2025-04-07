@@ -121,12 +121,20 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                         result.add_wrap("{const ");
                         result.add_fragment(value, value_offset);
                         result.add_wrap(" = {} as Record<string, any>;");
-                        close_str = "}";
+                        if close_str == "}" {
+                            close_str = "}}";
+                        } else {
+                            close_str = "}";
+                        }
                     } else if key == "slot-scope" {
                         result.add_wrap("{const {");
                         result.add_fragment(value, value_offset);
                         result.add_wrap("} = {} as Record<string, any>;");
-                        close_str = "}";
+                        if close_str == "}" {
+                            close_str = "}}";
+                        } else {
+                            close_str = "}";
+                        }
                     } else if !skip_util_v_if && !skip_util_v_else_if {
                         result.add_wrap("(");
                         result.add_fragment(value, value_offset);
@@ -357,6 +365,11 @@ mod tests {
             r#"<template slot-scope="record"></template>"#,
             "{const {record} = {} as Record<string, any>;}",
             &[(8, 22, 6)],
+        );
+        assert_render(
+            r#"<template v-if="show" slot-scope="record"></template>"#,
+            "if(show){{const {record} = {} as Record<string, any>;}}",
+            &[(3, 16, 4), (17, 34, 6)],
         );
     }
 }
