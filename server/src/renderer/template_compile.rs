@@ -118,18 +118,34 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                         }
                     } else if key == "v-slot" || key.starts_with("#") || key.starts_with("v-slot:")
                     {
-                        result.add_wrap("{const ");
+                        if value.starts_with("{") && value.ends_with("}") {
+                            result.add_wrap("{const ");
+                        } else {
+                            result.add_wrap("{const {");
+                        }
                         result.add_fragment(value, value_offset);
-                        result.add_wrap(" = {} as Record<string, any>;");
+                        if value.starts_with("{") && value.ends_with("}") {
+                            result.add_wrap(" = {} as Record<string, any>;");
+                        } else {
+                            result.add_wrap("} = {} as Record<string, any>;");
+                        }
                         if close_str == "}" {
                             close_str = "}}";
                         } else {
                             close_str = "}";
                         }
                     } else if key == "slot-scope" {
-                        result.add_wrap("{const {");
+                        if value.starts_with("{") && value.ends_with("}") {
+                            result.add_wrap("{const ");
+                        } else {
+                            result.add_wrap("{const {");
+                        }
                         result.add_fragment(value, value_offset);
-                        result.add_wrap("} = {} as Record<string, any>;");
+                        if value.starts_with("{") && value.ends_with("}") {
+                            result.add_wrap(" = {} as Record<string, any>;");
+                        } else {
+                            result.add_wrap("} = {} as Record<string, any>;");
+                        }
                         if close_str == "}" {
                             close_str = "}}";
                         } else {
@@ -357,6 +373,16 @@ mod tests {
             "{const { item } = {} as Record<string, any>;}",
             &[(7, 23, 8)],
         );
+        assert_render(
+            r#"<template #name="{ item }"></template>"#,
+            "{const { item } = {} as Record<string, any>;}",
+            &[(7, 17, 8)],
+        );
+        assert_render(
+            r#"<template #name="value, record"></template>"#,
+            "{const {value, record} = {} as Record<string, any>;}",
+            &[(8, 17, 13)],
+        );
     }
 
     #[test]
@@ -365,6 +391,11 @@ mod tests {
             r#"<template slot-scope="record"></template>"#,
             "{const {record} = {} as Record<string, any>;}",
             &[(8, 22, 6)],
+        );
+        assert_render(
+            r#"<template slot-scope="{ prop }"></template>"#,
+            "{const { prop } = {} as Record<string, any>;}",
+            &[(7, 22, 8)],
         );
         assert_render(
             r#"<template v-if="show" slot-scope="record"></template>"#,
