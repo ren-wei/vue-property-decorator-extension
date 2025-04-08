@@ -134,8 +134,30 @@ impl ConvertBack for Hover {
         let renderer = options.renderer.unwrap();
         if let Some(range) = self.range {
             if let Some(range) = renderer.get_original_range(uri, &range) {
+                let contents = if let HoverContents::Markup(markup) = self.contents {
+                    let prefix = "\n```typescript\nlet ";
+                    let prop = &markup.value
+                        [prefix.len()..markup.value.find(|v| v == ':').unwrap_or(prefix.len())];
+                    if markup.value.starts_with(prefix) {
+                        HoverContents::Markup(MarkupContent {
+                            kind: markup.kind,
+                            value: format!(
+                                "\n```typescript\n({}) {}.{}",
+                                renderer
+                                    .get_component_prop_type(uri, prop)
+                                    .unwrap_or("property"),
+                                renderer.get_component_name(uri).unwrap_or("Default"),
+                                &markup.value[prefix.len()..]
+                            ),
+                        })
+                    } else {
+                        HoverContents::Markup(markup)
+                    }
+                } else {
+                    self.contents
+                };
                 return Hover {
-                    contents: self.contents,
+                    contents,
                     range: Some(range),
                 };
             } else {

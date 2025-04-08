@@ -45,6 +45,7 @@ pub fn parse_module(
             let end = start + name.len();
             let description =
                 ast::get_class_member_description(member, comments, &class_name, source);
+            let typ = ast::get_class_member_prop_type(member);
             let prop_params =
                 ast::get_class_member_prop_params(member, source).map(|v| RenderCachePropParam {
                     typ: v.0,
@@ -55,6 +56,7 @@ pub fn parse_module(
                 name,
                 range: (start, end),
                 description,
+                typ,
                 prop_params,
             });
             // 获取安全更新范围
@@ -113,7 +115,7 @@ pub fn parse_module(
             });
         }
         Some(ParseScriptResult {
-            name_span: class.class.span,
+            name_span: class.ident.span(),
             description: ast::get_class_expr_description(class, comments),
             props,
             render_insert_offset,

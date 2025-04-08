@@ -14,6 +14,7 @@ pub use mapping::Mapping;
 pub use mapping::PositionType;
 use render_cache::RenderCache;
 use render_cache::RenderCacheGraph;
+pub use render_cache::RenderCachePropType;
 use tags_provider::ArcTagsProvider;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -85,6 +86,18 @@ impl Renderer {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(cache.render_insert_offset)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_component_name(&self, uri: &Url) -> Option<&str> {
+        let cache = self.render_cache.get(uri)?;
+        if let RenderCache::VueRenderCache(cache) = cache {
+            Some(cache.document.get_content(Some(Range::new(
+                cache.document.position_at(cache.name_range.0 as u32),
+                cache.document.position_at(cache.name_range.1 as u32),
+            ))))
         } else {
             None
         }
@@ -192,6 +205,19 @@ impl Renderer {
             uri: registered_uri.clone(),
             range,
         })
+    }
+
+    pub fn get_component_prop_type(&self, uri: &Url, prop: &str) -> Option<&str> {
+        let cache = self.render_cache.get(uri)?;
+        if let RenderCache::VueRenderCache(cache) = cache {
+            let prop = cache.props.iter().find(|v| v.name == prop)?;
+            match prop.typ {
+                RenderCachePropType::Property => Some("property"),
+                RenderCachePropType::Method => Some("method"),
+            }
+        } else {
+            None
+        }
     }
 }
 

@@ -487,7 +487,15 @@ pub struct RenderCacheProp {
     pub name: String,
     pub range: (usize, usize),
     pub description: Option<Description>,
+    pub typ: RenderCachePropType,
+    /// 如果存在 @prop 装饰器，那么表示装饰器中的参数
     pub prop_params: Option<RenderCachePropParam>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum RenderCachePropType {
+    Property,
+    Method,
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -3,7 +3,7 @@ use swc_common::{comments::Comments, source_map::SmallPos, BytePos};
 use swc_ecma_ast::{ClassMember, ClassProp};
 use tower_lsp::lsp_types::{MarkupContent, MarkupKind};
 
-use crate::renderer::multi_threaded_comment::MultiThreadedComments;
+use crate::renderer::{multi_threaded_comment::MultiThreadedComments, RenderCachePropType};
 
 use super::{
     comment::get_markdown,
@@ -119,6 +119,14 @@ pub fn get_class_member_name_pos(member: &ClassMember) -> BytePos {
         ClassMember::ClassProp(prop) => get_name_span_from_prop_name(&prop.key).lo,
         ClassMember::PrivateProp(prop) => prop.key.span.lo,
         _ => BytePos(0),
+    }
+}
+
+pub fn get_class_member_prop_type(member: &ClassMember) -> RenderCachePropType {
+    match member {
+        ClassMember::Method(_) => RenderCachePropType::Method,
+        ClassMember::PrivateMethod(_) => RenderCachePropType::Method,
+        _ => RenderCachePropType::Property,
     }
 }
 
