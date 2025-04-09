@@ -136,9 +136,9 @@ impl ConvertBack for Hover {
             if let Some(range) = renderer.get_original_range(uri, &range) {
                 let contents = if let HoverContents::Markup(markup) = self.contents {
                     let prefix = "\n```typescript\nlet ";
-                    let prop = &markup.value
-                        [prefix.len()..markup.value.find(|v| v == ':').unwrap_or(prefix.len())];
-                    if markup.value.starts_with(prefix) {
+                    if markup.value.starts_with(prefix) && markup.value.contains(":") {
+                        let prop =
+                            &markup.value[prefix.len()..markup.value.find(|v| v == ':').unwrap()];
                         HoverContents::Markup(MarkupContent {
                             kind: markup.kind,
                             value: format!(
@@ -220,21 +220,43 @@ impl ConvertBack for InsertReplaceEdit {
 impl ConvertBack for CompletionItem {
     /// 必须 uri, renderer
     async fn convert_back(self, options: &ConvertOptions<'_>) -> Self {
+        let uri = options.uri.unwrap();
+        let renderer = options.renderer.unwrap();
+        let detail = if let Some(detail) = self.detail {
+            let prefix = "let ";
+            if detail.starts_with(prefix) && detail.contains(":") {
+                let prop = &detail[prefix.len()..detail.find(|v| v == ':').unwrap()];
+                Some(format!(
+                    "({}) {}.{}",
+                    renderer
+                        .get_component_prop_type(uri, prop)
+                        .unwrap_or("property"),
+                    renderer.get_component_name(uri).unwrap_or("Default"),
+                    &detail[prefix.len()..]
+                ))
+            } else {
+                Some(detail)
+            }
+        } else {
+            self.detail
+        };
         if let Some(text_edit) = self.text_edit {
             match text_edit {
                 CompletionTextEdit::Edit(edit) => CompletionItem {
                     text_edit: Some(CompletionTextEdit::Edit(edit.convert_back(options).await)),
+                    detail,
                     ..self
                 },
                 CompletionTextEdit::InsertAndReplace(edit) => CompletionItem {
                     text_edit: Some(CompletionTextEdit::InsertAndReplace(
                         edit.convert_back(options).await,
                     )),
+                    detail,
                     ..self
                 },
             }
         } else {
-            self
+            CompletionItem { detail, ..self }
         }
     }
 }
