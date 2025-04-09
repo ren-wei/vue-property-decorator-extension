@@ -573,8 +573,11 @@ impl LanguageServer for VueLspServer {
                 }
                 PositionType::Template => {
                     debug!("Template");
-                    let renderer = self.renderer.lock().await;
-                    if let Some(html_document) = renderer.get_html_document(uri) {
+                    let html_document = {
+                        let renderer = self.renderer.lock().await;
+                        renderer.get_html_document(uri)
+                    };
+                    if let Some(html_document) = html_document {
                         let text_documents = self.text_documents.lock().await;
                         let text_document = text_documents.get_document(uri).unwrap();
                         let root =
@@ -583,9 +586,11 @@ impl LanguageServer for VueLspServer {
                         if let Some(root) = root {
                             if root.tag.as_ref().is_some_and(|tag| &tag[..] == "template") {
                                 let offset = text_document.offset_at(*position) as usize;
+                                drop(text_documents);
                                 if let Some(node) = html_document.find_node_at(offset, &mut vec![])
                                 {
                                     let token_type = Node::find_token_type_in_node(&node, offset);
+                                    let renderer = self.renderer.lock().await;
                                     if token_type == TokenType::StartTag
                                         || token_type == TokenType::EndTag
                                     {

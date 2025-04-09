@@ -116,6 +116,7 @@ impl TsServer {
             ..Default::default()
         };
         let target_uri = uri.clone().convert_to(options).await;
+        drop(renderer);
         if Renderer::is_vue_component(uri) {
             if let Ok(document) = Renderer::get_document_from_file(&target_uri).await {
                 self.server
@@ -175,15 +176,15 @@ impl TsServer {
 
     pub async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let renderer = self.renderer.lock().await;
+        let params = params
+            .convert_to(&ConvertOptions {
+                renderer: Some(&renderer),
+                ..Default::default()
+            })
+            .await;
+        drop(renderer);
         self.server
-            .send_notification::<DidCloseTextDocument>(
-                params
-                    .convert_to(&ConvertOptions {
-                        renderer: Some(&renderer),
-                        ..Default::default()
-                    })
-                    .await,
-            )
+            .send_notification::<DidCloseTextDocument>(params)
             .await
     }
 
@@ -209,10 +210,14 @@ impl TsServer {
             renderer: Some(&renderer),
             ..Default::default()
         };
-        let response = self
-            .server
-            .send_request::<WillRenameFiles>(params.convert_to(options).await)
-            .await;
+        let params = params.convert_to(options).await;
+        drop(renderer);
+        let response = self.server.send_request::<WillRenameFiles>(params).await;
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            renderer: Some(&renderer),
+            ..Default::default()
+        };
         response.convert_back(options).await
     }
 
@@ -223,15 +228,22 @@ impl TsServer {
             uri: Some(&uri),
             renderer: Some(&renderer),
         };
+        let params = params.convert_to(options).await;
+        drop(renderer);
         let response = self
             .server
             .send_request::<HoverRequest>(HoverParams {
-                text_document_position_params: params.convert_to(options).await,
+                text_document_position_params: params,
                 work_done_progress_params: WorkDoneProgressParams {
                     work_done_token: None,
                 },
             })
             .await;
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
         response.convert_back(options).await
     }
 
@@ -287,6 +299,7 @@ impl TsServer {
 
         // 处理 "this." 后面补全多了 "this." 的问题
         let mut result = result.convert_back(options).await?;
+        drop(renderer);
         if let Some(data) = &result.data {
             if data.is_object() {
                 let data = data.as_object().unwrap();
@@ -295,6 +308,7 @@ impl TsServer {
                 if line.is_some() && offset.is_some() {
                     let line = line.unwrap().as_number().unwrap().as_u64().unwrap() as u32 - 1;
                     let offset = offset.unwrap().as_number().unwrap().as_u64().unwrap() as u32 - 1;
+                    let renderer = self.renderer.lock().await;
                     let document = renderer.get_document(&original_uri).unwrap();
                     if offset >= 5 {
                         let text = document.get_content(Some(Range {
