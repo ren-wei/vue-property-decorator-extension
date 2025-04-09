@@ -701,6 +701,10 @@ impl ConvertBack for Vec<Diagnostic> {
         for mut diag in self {
             let start = renderer.get_original_position(&uri, &diag.range.start);
             if let Some(start) = start {
+                // 排除模版上的 `implicitly 'any' type` 错误
+                if diag.code == Some(NumberOrString::Number(7006)) {
+                    continue;
+                }
                 let end = Position {
                     line: start.line,
                     // TODO: 这里 panic
