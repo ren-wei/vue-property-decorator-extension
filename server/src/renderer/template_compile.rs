@@ -66,10 +66,10 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                     if let Some(caps) = REG_V_FOR_WITH_INDEX.captures(left) {
                         let item = caps.get(1).unwrap().as_str();
                         let index = caps.get(2).unwrap().as_str();
-                        result.add_wrap(&format!("let {index} = 0;"));
                         result.add_wrap(&format!("for(const {item} of {right})"));
                         result.add_wrap("{");
-                        close_str = "index+=1;}"
+                        result.add_wrap(&format!("const {index};"));
+                        close_str = "}"
                     } else {
                         result.add_wrap(&format!("for(const {left} of {right})"));
                         result.add_wrap("{");
@@ -334,17 +334,16 @@ mod tests {
         assert_render(
             r#"<div :key="index" v-for="(item, index) in list"></div>"#,
             &[
-                "let index = 0;",
                 "for(const item of list){",
+                "const index;",
                 "(index);",
                 "(item);",
                 "(index);",
                 "(list);",
-                "index+=1;",
                 "}",
             ]
             .join(""),
-            &[(39, 11, 5), (47, 26, 4), (54, 32, 5), (62, 42, 4)],
+            &[(37, 11, 5), (45, 26, 4), (52, 32, 5), (60, 42, 4)],
         );
     }
 
