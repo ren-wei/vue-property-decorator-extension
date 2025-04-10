@@ -232,15 +232,18 @@ impl TemplateCompileResult {
         let mut split = target.split("$");
         // 第一个必定存在，并且不需要加 `this.` 前缀
         let first = split.next().unwrap();
-        self.render += &first.replace("\n", " ");
-        self.mapping.push((self.offset, original, first.len()));
-        self.offset += first.len();
-        original += first.len();
+        if first.len() > 0 {
+            self.render += &first.replace("\n", " ");
+            self.mapping.push((self.offset, original, first.len()));
+            self.offset += first.len();
+            original += first.len();
+        }
 
         let prefix = "this.";
+        let mut is_add = !first.ends_with(".");
         for item in split {
             // 循环中除了 $event 的每项都需要加前缀
-            if !item.starts_with("event") {
+            if is_add && !item.starts_with("event") {
                 self.add_wrap(prefix);
             }
             self.render += "$";
@@ -248,6 +251,7 @@ impl TemplateCompileResult {
             self.mapping.push((self.offset, original, item.len() + 1));
             self.offset += item.len() + 1;
             original += item.len() + 1;
+            is_add = !item.ends_with(".");
         }
     }
 }
@@ -430,6 +434,25 @@ mod tests {
             r#"<div @click="value = 'xxx'"></div>"#,
             "(()=>{value = 'xxx'});",
             &[(6, 13, 13)],
+        );
+    }
+
+    #[test]
+    fn symbol() {
+        assert_render(
+            r#"<div :title="$route.query.title"></div>"#,
+            "(this.$route.query.title);",
+            &[(6, 13, 18)],
+        );
+        assert_render(
+            r#"<div :title="$parent.$parent.title"></div>"#,
+            "(this.$parent.$parent.title);",
+            &[(6, 13, 8), (14, 21, 13)],
+        );
+        assert_render(
+            r#"<div @click="onClick($event)"></div>"#,
+            "(()=>{onClick($event)});",
+            &[(6, 13, 8), (14, 21, 7)],
         );
     }
 }
