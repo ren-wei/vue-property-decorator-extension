@@ -11,5 +11,8 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber).unwrap();
         VueLspServer::new(client, None)
     });
-    Server::new(stdin, stdout, socket).serve(service).await;
+    Server::new(stdin, stdout, socket)
+        .concurrency_level(16)
+        .serve(service)
+        .await;
 }
