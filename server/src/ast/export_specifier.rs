@@ -24,7 +24,14 @@ pub fn get_export_from_export_specifier(specifier: &ExportSpecifier) -> Option<O
 pub fn get_orig_name_from_export_specifier(specifier: &ExportSpecifier) -> Option<Option<String>> {
     match specifier {
         ExportSpecifier::Default(_) => Some(None),
-        ExportSpecifier::Named(specifier) => Some(Some(specifier.orig.atom().to_string())),
+        ExportSpecifier::Named(specifier) => {
+            let orig = specifier.orig.atom().to_string();
+            if orig == "default" {
+                Some(None)
+            } else {
+                Some(Some(orig))
+            }
+        }
         ExportSpecifier::Namespace(_) => None,
     }
 }

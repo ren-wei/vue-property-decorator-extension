@@ -12,7 +12,12 @@ pub fn get_orig_name_from_import_specifier(specifier: &ImportSpecifier) -> Optio
         ImportSpecifier::Default(_) => Some(None),
         ImportSpecifier::Named(specifier) => {
             if let Some(imported) = &specifier.imported {
-                Some(Some(imported.atom().to_string()))
+                let imported = imported.atom().to_string();
+                if imported == "default" {
+                    Some(None)
+                } else {
+                    Some(Some(imported))
+                }
             } else {
                 Some(Some(specifier.local.sym.to_string()))
             }
