@@ -151,6 +151,12 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                         } else {
                             close_str = "}";
                         }
+                    } else if (key.starts_with("@") || key.starts_with("v-on:"))
+                        && !value.contains("=>")
+                    {
+                        result.add_wrap("(()=>{");
+                        result.add_fragment(value, value_offset);
+                        result.add_wrap("});");
                     } else if !skip_util_v_if && !skip_util_v_else_if {
                         result.add_wrap("(");
                         result.add_fragment(value, value_offset);
@@ -400,6 +406,30 @@ mod tests {
             r#"<template v-if="show" slot-scope="record"></template>"#,
             "if(show){{const {record} = {} as Record<string, any>;}}",
             &[(3, 16, 4), (17, 34, 6)],
+        );
+    }
+
+    #[test]
+    fn event() {
+        assert_render(
+            r#"<div @click="onClick"></div>"#,
+            "(()=>{onClick});",
+            &[(6, 13, 7)],
+        );
+        assert_render(
+            r#"<div @click="onClick()"></div>"#,
+            "(()=>{onClick()});",
+            &[(6, 13, 9)],
+        );
+        assert_render(
+            r#"<div @click="e => onClick(e)"></div>"#,
+            "(e => onClick(e));",
+            &[(1, 13, 15)],
+        );
+        assert_render(
+            r#"<div @click="value = 'xxx'"></div>"#,
+            "(()=>{value = 'xxx'});",
+            &[(6, 13, 13)],
         );
     }
 }
