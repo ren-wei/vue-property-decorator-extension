@@ -38,11 +38,7 @@ export function activate(context: ExtensionContext) {
     );
 
     // Start the client. This will also launch the server
-    if (process.platform === "win32") {
-        window.showErrorMessage("The Windows platform is not currently supported.");
-    } else {
-        client.start();
-    }
+    client.start();
 }
 
 export function deactivate(): Thenable<void> | undefined {
