@@ -25,7 +25,6 @@ use tower_lsp::{
 use tracing::debug;
 
 use crate::convert::{ConvertBack, ConvertOptions, ConvertTo};
-use crate::renderer::Mapping;
 use crate::renderer::Renderer;
 
 /// # TsServer
@@ -95,8 +94,8 @@ impl TsServer {
     pub async fn initialize(&mut self, params: InitializeParams) -> Result<InitializeResult> {
         self.initialize_params = InitializeParams {
             process_id: Some(std::process::id()),
-            root_uri: params.root_uri.clone(),
             capabilities: params.capabilities.clone(),
+            workspace_folders: params.workspace_folders.clone(),
             initialization_options: Some(json!({
                 "locale": "zh-CN",
             })),
@@ -109,7 +108,7 @@ impl TsServer {
         self.server.initialized().await;
     }
 
-    pub async fn did_open(&mut self, uri: &Url, document: &FullTextDocument) {
+    pub async fn did_open(&mut self, uri: &Uri, document: &FullTextDocument) {
         let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             renderer: Some(&renderer),
@@ -273,7 +272,7 @@ impl TsServer {
     pub async fn completion_resolve(
         &self,
         params: CompletionItem,
-        original_uri: Url,
+        original_uri: Uri,
     ) -> Result<CompletionItem> {
         let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {

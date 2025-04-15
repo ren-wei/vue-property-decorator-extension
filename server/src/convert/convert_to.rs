@@ -2,30 +2,39 @@ use std::{path::PathBuf, str::FromStr};
 
 use tower_lsp::lsp_types::*;
 
-use crate::renderer::Mapping;
-
 use super::convert_options::ConvertOptions;
 
 pub trait ConvertTo {
     async fn convert_to(self, options: &ConvertOptions) -> Self;
 }
 
-impl ConvertTo for Url {
+impl ConvertTo for Uri {
     /// 必须 root_uri, target_uri
     async fn convert_to(mut self, options: &ConvertOptions<'_>) -> Self {
         let (root_uri, target_uri) = options.root_uri_target_uri();
 
-        let src_path = self.path();
+        let src_path = PathBuf::from_str(&self.path().to_string()).unwrap();
         let src_dir = root_uri.path();
-        let dest_dir = PathBuf::from_str(target_uri.path()).unwrap();
+        let dest_dir = PathBuf::from_str(&target_uri.path().to_string()).unwrap();
         // 计算相对路径
         let rel_path = src_path.strip_prefix(&format!("{}/", src_dir)).unwrap();
         // 转换为目标路径
         let dest_path = dest_dir.join(&rel_path);
         if rel_path.ends_with(".vue") {
-            self.set_path(&format!("{}{}", dest_path.to_str().unwrap(), ".ts"));
+            self = Uri::from_str(&format!(
+                "{}://{}{}",
+                self.scheme().unwrap(),
+                dest_path.to_str().unwrap(),
+                ".ts"
+            ))
+            .unwrap();
         } else {
-            self.set_path(dest_path.to_str().unwrap());
+            self = Uri::from_str(&format!(
+                "{}://{}",
+                self.scheme().unwrap(),
+                dest_path.to_str().unwrap()
+            ))
+            .unwrap();
         }
         self
     }
@@ -227,7 +236,7 @@ impl ConvertTo for FileCreate {
     /// 必须 root_uri, target_uri
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
         FileCreate {
-            uri: Url::from_str(&self.uri)
+            uri: Uri::from_str(&self.uri)
                 .unwrap()
                 .convert_to(options)
                 .await
@@ -252,11 +261,11 @@ impl ConvertTo for RenameFilesParams {
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
         let mut files = vec![];
         for file in self.files {
-            let old_uri = Url::from_str(&file.old_uri)
+            let old_uri = Uri::from_str(&file.old_uri)
                 .unwrap()
                 .convert_to(options)
                 .await;
-            let new_uri = Url::from_str(&file.new_uri)
+            let new_uri = Uri::from_str(&file.new_uri)
                 .unwrap()
                 .convert_to(options)
                 .await;
@@ -273,7 +282,7 @@ impl ConvertTo for FileDelete {
     /// 必须 root_uri, target_uri
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
         FileDelete {
-            uri: Url::from_str(&self.uri)
+            uri: Uri::from_str(&self.uri)
                 .unwrap()
                 .convert_to(options)
                 .await

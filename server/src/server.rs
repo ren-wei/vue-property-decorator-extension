@@ -23,13 +23,13 @@ use tower_lsp::lsp_types::{
     GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult,
     InitializedParams, RenameFilesParams, SemanticTokensParams, SemanticTokensRangeParams,
     SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkDoneProgressOptions, WorkspaceEdit,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Uri, WorkDoneProgressOptions, WorkspaceEdit,
     WorkspaceFileOperationsServerCapabilities, WorkspaceServerCapabilities,
 };
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
 
-use crate::renderer::{Mapping, PositionType, Renderer};
+use crate::renderer::{PositionType, Renderer};
 use crate::ts_server::TsServer;
 use crate::vue_data::VueDataProvider;
 
@@ -75,7 +75,7 @@ impl VueLspServer {
     }
 
     /// 在进行 html 服务器相关的操作前调用
-    async fn update_html_languageservice(&self, uri: &Url) {
+    async fn update_html_languageservice(&self, uri: &Uri) {
         debug!("(Vue2TsDecoratorServer/update_html_languageservice)");
         let tags_provider = {
             let mut renderer = self.renderer.lock().await;
@@ -97,8 +97,8 @@ impl VueLspServer {
     }
 
     /// 是否处理 uri
-    fn is_uri_valid(uri: &Url) -> bool {
-        !uri.path().contains("/node_modules/")
+    fn is_uri_valid(uri: &Uri) -> bool {
+        !uri.path().to_string().contains("/node_modules/")
     }
 }
 
@@ -113,7 +113,17 @@ impl Debug for VueLspServer {
 #[tower_lsp::async_trait]
 impl LanguageServer for VueLspServer {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        if let Some(root_uri) = &params.root_uri {
+        if let Some(folders) = &params.workspace_folders {
+            if folders.len() != 1 {
+                return Ok(InitializeResult {
+                    server_info: Some(ServerInfo {
+                        name: "vue-property-decorator-extension-server".to_string(),
+                        version: Some("1.0.0".to_string()),
+                    }),
+                    ..Default::default()
+                });
+            }
+            let root_uri = &folders[0].uri;
             self.renderer.lock().await.init(root_uri).await;
             let result = self.ts_server.write().await.initialize(params).await?;
             let file_operation = Some(FileOperationRegistrationOptions {
@@ -419,7 +429,7 @@ impl LanguageServer for VueLspServer {
         };
         if let Some(typ) = typ {
             /// 添加额外参数
-            fn add_extra_params(list: &mut Vec<CompletionItem>, uri: &Url) {
+            fn add_extra_params(list: &mut Vec<CompletionItem>, uri: &Uri) {
                 for item in list {
                     if let Some(data) = &mut item.data {
                         if data.is_object() {
@@ -437,7 +447,7 @@ impl LanguageServer for VueLspServer {
                 }
             }
             /// 给每项的 data 中加入标记表示来自 ts 服务器的补全
-            fn completion_add_flag(completion: &mut Result<Option<CompletionResponse>>, uri: &Url) {
+            fn completion_add_flag(completion: &mut Result<Option<CompletionResponse>>, uri: &Uri) {
                 if let Ok(Some(completion)) = completion {
                     match completion {
                         CompletionResponse::Array(list) => {

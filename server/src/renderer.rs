@@ -10,7 +10,6 @@ mod tags_provider;
 mod template_compile;
 
 use html_languageservice::parser::html_document::HTMLDocument;
-pub use mapping::Mapping;
 pub use mapping::PositionType;
 use render_cache::RenderCache;
 use render_cache::RenderCacheGraph;
@@ -21,23 +20,24 @@ use tokio::io::AsyncReadExt;
 use tower_lsp::lsp_types::Location;
 
 use std::collections::HashSet;
+use std::str::FromStr;
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
 use lsp_textdocument::FullTextDocument;
-use tower_lsp::lsp_types::{Position, Range, Url};
+use tower_lsp::lsp_types::{Position, Range, Uri};
 use tracing::error;
 
 /// # 渲染器
 /// 将项目渲染到同目录下的加上 `.~$` 前缀的目录中
 pub struct Renderer {
-    root_uri_target_uri: Option<(Url, Url)>,
+    root_uri_target_uri: Option<(Uri, Uri)>,
     alias: HashMap<String, String>,
     render_cache: RenderCacheGraph,
-    provider_map: HashMap<Url, ArcTagsProvider>,
+    provider_map: HashMap<Uri, ArcTagsProvider>,
     /// 组件库列表
-    library_list: Vec<Url>,
+    library_list: Vec<Uri>,
     /// 文件被创建时，将会创建的文件，创建完成后清空
-    will_create_files: HashSet<Url>,
+    will_create_files: HashSet<Uri>,
 }
 
 impl Renderer {
@@ -52,11 +52,11 @@ impl Renderer {
         }
     }
 
-    pub fn root_uri_target_uri(&self) -> &Option<(Url, Url)> {
+    pub fn root_uri_target_uri(&self) -> &Option<(Uri, Uri)> {
         &self.root_uri_target_uri
     }
 
-    pub fn get_document(&self, uri: &Url) -> Option<&FullTextDocument> {
+    pub fn get_document(&self, uri: &Uri) -> Option<&FullTextDocument> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(&cache.document)
@@ -65,7 +65,7 @@ impl Renderer {
         }
     }
 
-    pub fn get_html_document(&self, uri: &Url) -> Option<HTMLDocument> {
+    pub fn get_html_document(&self, uri: &Uri) -> Option<HTMLDocument> {
         let cache = &self.render_cache[uri];
         if let RenderCache::VueRenderCache(cache) = cache {
             let mut roots = vec![];
@@ -82,7 +82,7 @@ impl Renderer {
         }
     }
 
-    pub fn get_render_insert_offset(&self, uri: &Url) -> Option<usize> {
+    pub fn get_render_insert_offset(&self, uri: &Uri) -> Option<usize> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(cache.render_insert_offset)
@@ -91,7 +91,7 @@ impl Renderer {
         }
     }
 
-    pub fn get_component_name(&self, uri: &Url) -> Option<&str> {
+    pub fn get_component_name(&self, uri: &Uri) -> Option<&str> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(cache.document.get_content(Some(Range::new(
@@ -104,7 +104,7 @@ impl Renderer {
     }
 
     /// 获取标签对应的组件位置
-    pub fn get_component_location(&self, uri: &Url, tag: &str) -> Option<Location> {
+    pub fn get_component_location(&self, uri: &Uri, tag: &str) -> Option<Location> {
         let (mut registered_uri, register) = self.render_cache.get_register(uri, tag)?;
         let mut export_name = register.export_name.clone();
         let range;
@@ -147,7 +147,7 @@ impl Renderer {
 
     pub fn get_component_prop_location(
         &self,
-        uri: &Url,
+        uri: &Uri,
         tag: &str,
         attr: &str,
     ) -> Option<Location> {
@@ -207,7 +207,7 @@ impl Renderer {
         })
     }
 
-    pub fn get_component_prop_type(&self, uri: &Url, prop: &str) -> Option<&str> {
+    pub fn get_component_prop_type(&self, uri: &Uri, prop: &str) -> Option<&str> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             let prop = cache.props.iter().find(|v| v.name == prop)?;
@@ -223,12 +223,12 @@ impl Renderer {
 
 /// tools
 impl Renderer {
-    pub fn get_line_end(&self, uri: &Url, line: u32) -> u32 {
+    pub fn get_line_end(&self, uri: &Uri, line: u32) -> u32 {
         Renderer::get_line_end_by_document(self.get_document(uri), line)
     }
 
     /// 脚本开始位置
-    pub fn start_position(&self, uri: &Url) -> Option<Position> {
+    pub fn start_position(&self, uri: &Uri) -> Option<Position> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(
@@ -242,7 +242,7 @@ impl Renderer {
     }
 
     /// 脚本结束位置
-    pub fn end_position(&self, uri: &Url) -> Option<Position> {
+    pub fn end_position(&self, uri: &Uri) -> Option<Position> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(
@@ -254,17 +254,17 @@ impl Renderer {
             None
         }
     }
-    pub async fn get_document_from_file(uri: &Url) -> Result<FullTextDocument, Error> {
+    pub async fn get_document_from_file(uri: &Uri) -> Result<FullTextDocument, Error> {
         let mut content = String::new();
         let temp_path;
 
+        let path_str = uri.path().to_string();
         let path: &str = if OS == "windows" {
             temp_path =
-                percent_encoding::percent_decode(&uri.path()[1..].as_bytes()).decode_utf8_lossy();
+                percent_encoding::percent_decode(&path_str[1..].as_bytes()).decode_utf8_lossy();
             &temp_path
         } else {
-            temp_path =
-                percent_encoding::percent_decode(&uri.path().as_bytes()).decode_utf8_lossy();
+            temp_path = percent_encoding::percent_decode(&path_str.as_bytes()).decode_utf8_lossy();
             &temp_path
         };
         match File::open(path).await {
@@ -279,12 +279,13 @@ impl Renderer {
                 return Err(Error::new(std::io::ErrorKind::NotFound, path));
             }
         }
-        let language_id = uri.path()[uri.path().rfind(".").unwrap() + 1..].to_string();
+        let language_id =
+            uri.path().to_string()[uri.path().to_string().rfind(".").unwrap() + 1..].to_string();
         Ok(FullTextDocument::new(language_id, 1, content))
     }
 
-    pub fn is_vue_component(uri: &Url) -> bool {
-        uri.to_file_path()
+    pub fn is_vue_component(uri: &Uri) -> bool {
+        PathBuf::from_str(&uri.path().to_string())
             .unwrap()
             .extension()
             .is_some_and(|v| v == "vue")
@@ -294,27 +295,21 @@ impl Renderer {
     /// * 是文件
     /// * 存在于文件系统中
     /// * 不在 node_modules 中
-    pub fn is_uri_valid(uri: &Url) -> bool {
-        let file_path = uri.to_file_path();
-        if let Ok(file_path) = file_path {
-            file_path.exists() && file_path.is_file() && !uri.path().contains("/node_modules/")
-        } else {
-            false
-        }
+    pub fn is_uri_valid(uri: &Uri) -> bool {
+        let file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+        file_path.exists()
+            && file_path.is_file()
+            && !uri.path().to_string().contains("/node_modules/")
     }
 
     /// uri 是否指向 node_modules 下的库
     /// * 是目录
     /// * 存在于文件系统中
-    pub fn is_node_modules(uri: &Url) -> bool {
-        let file_path = uri.to_file_path();
-        if let Ok(file_path) = file_path {
-            file_path.exists()
-                && file_path.is_dir()
-                && file_path.to_string_lossy().contains("/node_modules/")
-        } else {
-            false
-        }
+    pub fn is_node_modules(uri: &Uri) -> bool {
+        let file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+        file_path.exists()
+            && file_path.is_dir()
+            && file_path.to_string_lossy().contains("/node_modules/")
     }
 
     pub fn is_position_valid_by_document(
@@ -351,10 +346,10 @@ impl Renderer {
     }
 
     /// 获取目标路径
-    fn get_target_path(uri: &Url, root_uri: &Url, target_root_uri: &Url) -> PathBuf {
-        let src_path = uri.to_file_path().unwrap();
-        let root_path = root_uri.to_file_path().unwrap();
-        let target_root_path = target_root_uri.to_file_path().unwrap();
+    fn get_target_path(uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) -> PathBuf {
+        let src_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
+        let target_root_path = PathBuf::from_str(&target_root_uri.path().to_string()).unwrap();
         // 计算相对路径
         let rel_path = src_path.strip_prefix(&root_path).unwrap().to_path_buf();
         // 转换为目标路径
@@ -369,10 +364,10 @@ impl Renderer {
     }
 
     /// 获取原路径
-    pub fn get_source_path(uri: &Url, root_uri: &Url, target_root_uri: &Url) -> PathBuf {
-        let target_path = uri.to_file_path().unwrap();
-        let root_path = root_uri.to_file_path().unwrap();
-        let target_root_path = target_root_uri.to_file_path().unwrap();
+    pub fn get_source_path(uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) -> PathBuf {
+        let target_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
+        let target_root_path = PathBuf::from_str(&target_root_uri.path().to_string()).unwrap();
         // 计算相对路径
         let rel_path = target_path
             .strip_prefix(target_root_path)

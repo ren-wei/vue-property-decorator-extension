@@ -1,11 +1,11 @@
 use html_languageservice::html_data::Description;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
 use tower_lsp::lsp_types::Location;
 
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
 use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem, Stmt};
-use tower_lsp::lsp_types::{Range, Url};
+use tower_lsp::lsp_types::{Range, Uri};
 
 use crate::ast;
 
@@ -36,12 +36,12 @@ pub struct LibComponentProp {
 /// 如果遇到导入语句，那么先进入导入语句的文件
 /// 将中间结果保存到上下文
 /// 获取继承自 Vue 的组件
-pub async fn _parse_lib(uri: &Url) -> Vec<LibComponent> {
+pub async fn _parse_lib(uri: &Uri) -> Vec<LibComponent> {
     // 尝试解析 uri 下 types/index.d.ts 文件
     // 如果遇到 export * from './xxx'，那么递归解析
     // 获取继承自 Vue 的组件的 ClassExpr
     let components = vec![];
-    let mut file_path = uri.to_file_path().unwrap();
+    let mut file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
     file_path.push("types/index.d.ts");
     if file_path.is_file() {
         let _idx_map = _parse_file(file_path);
@@ -103,15 +103,13 @@ fn _parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
 /// * 存在 types/index.d.ts 文件
 /// * 如果遍历 types 目录时是一个文件，那么取其中的 class 作为组件
 /// * 如果遍历 types 目录时是一个目录，那么存在静态属性的文件是主组件其他组件挂载到该组件下
-pub fn parse_specific_lib(uri: &Url) -> LibRenderCache {
+pub fn parse_specific_lib(uri: &Uri) -> LibRenderCache {
     let mut components = vec![];
-    let mut file_path = uri.to_file_path().unwrap();
+    let mut file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
     let name = file_path
         .file_name()
-        .map(|v| v.to_str())
-        .flatten()
-        .unwrap_or(uri.path())
-        .to_string();
+        .map(|v| v.to_string_lossy().to_string())
+        .unwrap_or(uri.path().to_string());
     file_path.push("types/index.d.ts");
     if file_path.is_file() {
         file_path.pop();
@@ -195,7 +193,11 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                                     props.push(LibComponentProp {
                                         name,
                                         location: Location {
-                                            uri: Url::from_file_path(path).unwrap(),
+                                            uri: Uri::from_str(&format!(
+                                                "file://{}",
+                                                path.to_string_lossy()
+                                            ))
+                                            .unwrap(),
                                             range: Range {
                                                 start: document.position_at(prop.span.lo.to_u32()),
                                                 end: document.position_at(prop.span.hi.to_u32()),
@@ -207,7 +209,7 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                         }
                     }
                     let name_location = Location {
-                        uri: Url::from_file_path(path).unwrap(),
+                        uri: Uri::from_str(&format!("file://{}", path.to_string_lossy())).unwrap(),
                         range: Range::new(
                             document.position_at(class.span.lo.to_u32()),
                             document.position_at(class.span.hi.to_u32()),

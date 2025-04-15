@@ -1,11 +1,11 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
-use tower_lsp::lsp_types::Url;
+use tower_lsp::lsp_types::Uri;
 
 /// # 解析别名
 /// 从 tsconfig.json 文件内容获取别名信息
-pub fn parse_alias(tsconfig: &str, root_uri: &Url) -> HashMap<String, String> {
-    let root_path = root_uri.to_file_path().unwrap();
+pub fn parse_alias(tsconfig: &str, root_uri: &Uri) -> HashMap<String, String> {
+    let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
     let mut alias = HashMap::new();
     let tsconfig = serde_json::from_str::<serde_json::Value>(&tsconfig);
     if let Ok(tsconfig) = tsconfig {
@@ -43,14 +43,14 @@ pub fn parse_alias(tsconfig: &str, root_uri: &Url) -> HashMap<String, String> {
 /// 不判断对应文件是否存在
 /// 不添加后缀
 pub fn parse_import_path(
-    base_uri: &Url,
+    base_uri: &Uri,
     path: &str,
     alias: &HashMap<String, String>,
-    root_uri: &Url,
+    root_uri: &Uri,
 ) -> PathBuf {
     if path.starts_with(".") {
         // 处理相对路径
-        let base_path = base_uri.to_file_path().unwrap();
+        let base_path = PathBuf::from_str(&base_uri.path().to_string()).unwrap();
         // 获取基础路径的父目录
         let mut result = match base_path.parent() {
             Some(parent) => parent.to_path_buf(),
@@ -85,8 +85,7 @@ pub fn parse_import_path(
         }
     }
     // 可能位于 node_modules 中
-    root_uri
-        .to_file_path()
+    PathBuf::from_str(&root_uri.path().to_string())
         .unwrap()
         .join("node_modules")
         .join(path)
@@ -94,14 +93,14 @@ pub fn parse_import_path(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::PathBuf};
+    use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
-    use tower_lsp::lsp_types::Url;
+    use tower_lsp::lsp_types::Uri;
 
     use super::{parse_alias, parse_import_path};
 
     fn assert_alias(tsconfig: &str, expected: &[(&str, &str)]) {
-        let root_uri = Url::from_file_path("/tmp/project").unwrap();
+        let root_uri = Uri::from_str("file:///tmp/project").unwrap();
         let alias = parse_alias(tsconfig, &root_uri);
         let expected =
             HashMap::from_iter(expected.iter().map(|(k, v)| (k.to_string(), v.to_string())));
@@ -109,8 +108,8 @@ mod tests {
     }
 
     fn assert_parse(path: &str, expected: &str, alias: &[(&str, &str)]) {
-        let base_uri = Url::from_file_path("/tmp/project/base.vue").unwrap();
-        let root_uri = Url::from_file_path("/tmp/project").unwrap();
+        let base_uri = Uri::from_str("file:///tmp/project/base.vue").unwrap();
+        let root_uri = Uri::from_str("file:///tmp/project").unwrap();
         let result = parse_import_path(
             &base_uri,
             path,

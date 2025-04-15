@@ -1,27 +1,14 @@
-use tower_lsp::lsp_types::{Position, Range, Url};
+use tower_lsp::lsp_types::{Position, Range, Uri};
 
 use super::{render_cache::RenderCache, Renderer};
 
-pub trait Mapping {
-    /// 是否是原始文档中的位置
-    fn is_position_valid(&self, uri: &Url, position: &Position) -> bool;
-    /// 获取位置对应的原始位置，如果位置不在 template_compile_result 中或无效，返回 None
-    fn get_original_position(&self, uri: &Url, position: &Position) -> Option<Position>;
-    /// 获取范围对应的原始范围，如果范围不在 template_compile_result 中或无效，返回 None
-    fn get_original_range(&self, uri: &Url, range: &Range) -> Option<Range>;
-    /// 获取文档位置映射后的位置，如果不在 template 表达式范围内，那么返回 None
-    fn get_mapping_position(&self, uri: &Url, position: &Position) -> Option<Position>;
-    /// 获取 vue 组件所处位置的类型，如果不是 vue 文件或者位置无效，返回 None
-    fn get_position_type(&self, uri: &Url, position: &Position) -> Option<PositionType>;
-}
-
 /// mapping
-impl Mapping for Renderer {
-    fn is_position_valid(&self, uri: &Url, position: &Position) -> bool {
+impl Renderer {
+    pub fn is_position_valid(&self, uri: &Uri, position: &Position) -> bool {
         Renderer::is_position_valid_by_document(self.get_document(uri), position)
     }
 
-    fn get_original_position(&self, uri: &Url, position: &Position) -> Option<Position> {
+    pub fn get_original_position(&self, uri: &Uri, position: &Position) -> Option<Position> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             let document = &cache.document;
@@ -44,13 +31,13 @@ impl Mapping for Renderer {
         }
     }
 
-    fn get_original_range(&self, uri: &Url, range: &Range) -> Option<Range> {
+    pub fn get_original_range(&self, uri: &Uri, range: &Range) -> Option<Range> {
         let start = self.get_original_position(uri, &range.start)?;
         let end = self.get_original_position(uri, &range.end)?;
         Some(Range { start, end })
     }
 
-    fn get_mapping_position(&self, uri: &Url, position: &Position) -> Option<Position> {
+    pub fn get_mapping_position(&self, uri: &Uri, position: &Position) -> Option<Position> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             let document = &cache.document;
@@ -69,7 +56,7 @@ impl Mapping for Renderer {
         }
     }
 
-    fn get_position_type(&self, uri: &Url, position: &Position) -> Option<PositionType> {
+    pub fn get_position_type(&self, uri: &Uri, position: &Position) -> Option<PositionType> {
         let cache = &self.render_cache[uri];
         if let RenderCache::VueRenderCache(cache) = cache {
             let offset = cache.document.offset_at(*position) as usize;
@@ -95,7 +82,7 @@ impl Mapping for Renderer {
 
 impl Renderer {
     /// 获取编译前的偏移量，如果不在 template 范围内，返回 None
-    fn get_original_offset(&self, uri: &Url, offset: usize) -> Option<usize> {
+    fn get_original_offset(&self, uri: &Uri, offset: usize) -> Option<usize> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             if cache.mapping.len() == 0 {
@@ -125,7 +112,7 @@ impl Renderer {
     /// 获取编译后的所在的字节位置，如果不在 template 范围内返回 None
     ///
     /// `offset` 是模版上的位置
-    fn get_mapping_offset(&self, uri: &Url, offset: usize) -> Option<usize> {
+    fn get_mapping_offset(&self, uri: &Uri, offset: usize) -> Option<usize> {
         let cache = self.render_cache.get(uri)?;
         if let RenderCache::VueRenderCache(cache) = cache {
             if cache.mapping.len() == 0 {

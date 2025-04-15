@@ -13,7 +13,7 @@ use html_languageservice::participant::{
 use regex::Regex;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionTextEdit, Documentation, InsertTextFormat,
-    Position, Range, TextEdit, Url,
+    Position, Range, TextEdit, Uri,
 };
 use tracing::debug;
 
@@ -22,7 +22,7 @@ use super::Renderer;
 
 impl Renderer {
     /// 获取 provider，如果不是最新则先更新
-    pub async fn get_tags_provider(&mut self, uri: &Url) -> ArcTagsProvider {
+    pub async fn get_tags_provider(&mut self, uri: &Uri) -> ArcTagsProvider {
         let version = self.get_document_version(uri);
         if let Some(provider) = self.provider_map.get(uri) {
             if provider.version() == version {
@@ -160,7 +160,7 @@ impl Renderer {
         provider
     }
 
-    fn get_document_version(&self, uri: &Url) -> Option<i32> {
+    fn get_document_version(&self, uri: &Uri) -> Option<i32> {
         let cache = &self.render_cache[uri];
         if let RenderCache::VueRenderCache(cache) = cache {
             Some(cache.document.version())

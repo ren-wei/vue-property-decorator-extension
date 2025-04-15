@@ -2,7 +2,7 @@ pub mod lib_render_cache;
 pub mod ts_render_cache;
 pub mod vue_render_cache;
 
-use std::{collections::HashMap, ops::Index};
+use std::{collections::HashMap, ops::Index, path::PathBuf, str::FromStr};
 
 use html_languageservice::html_data::Description;
 use lib_render_cache::LibRenderCache;
@@ -10,7 +10,7 @@ use lsp_textdocument::FullTextDocument;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
 use tokio::fs;
-use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Url};
+use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Uri};
 use tracing::{debug, error};
 use ts_render_cache::TsRenderCache;
 use vue_render_cache::VueRenderCache;
@@ -26,10 +26,10 @@ type RRGraph = Graph<RenderCache, Relationship>;
 /// 存储组件渲染缓存和组件间关系的图
 pub struct RenderCacheGraph {
     graph: RRGraph,
-    idx_map: HashMap<Url, NodeIndex>,
-    url_map: HashMap<NodeIndex, Url>,
+    idx_map: HashMap<Uri, NodeIndex>,
+    url_map: HashMap<NodeIndex, Uri>,
     /// 未加入的边
-    virtual_edges: Vec<(Url, Url, Relationship)>,
+    virtual_edges: Vec<(Uri, Uri, Relationship)>,
 }
 
 impl RenderCacheGraph {
@@ -42,18 +42,18 @@ impl RenderCacheGraph {
         }
     }
 
-    pub fn get(&self, uri: &Url) -> Option<&RenderCache> {
+    pub fn get(&self, uri: &Uri) -> Option<&RenderCache> {
         let idx = self.idx_map.get(uri)?;
         self.graph.node_weight(*idx)
     }
 
-    pub fn get_mut(&mut self, uri: &Url) -> Option<&mut RenderCache> {
+    pub fn get_mut(&mut self, uri: &Uri) -> Option<&mut RenderCache> {
         let idx = self.idx_map.get(uri)?;
         self.graph.node_weight_mut(*idx)
     }
 
     /// 如果节点不存在，那么直接新增，如果节点存在那么更新缓存
-    pub fn add_node(&mut self, uri: &Url, cache: RenderCache) {
+    pub fn add_node(&mut self, uri: &Uri, cache: RenderCache) {
         // 检查对应节点是否存在
         let idx = self.idx_map.get(uri);
         if let Some(idx) = idx {
@@ -69,7 +69,7 @@ impl RenderCacheGraph {
     /// 添加边，如果存在相同的边，那么忽略
     ///
     /// *Panics* 如果节点不存在
-    pub fn add_edge(&mut self, from: &Url, to: &Url, relation: Relationship) {
+    pub fn add_edge(&mut self, from: &Uri, to: &Uri, relation: Relationship) {
         let a = self.idx_map.get(from);
         if a.is_none() {
             panic!("from: {:?}", from.path());
@@ -94,13 +94,13 @@ impl RenderCacheGraph {
 
     /// 添加虚拟边，不实际添加入 graph 避免节点不存在出现 panic
     /// 当所以节点都被添加后，请使用 flush 将所有边加入 graph
-    pub fn add_virtual_edge(&mut self, from: &Url, to: &Url, relation: Relationship) {
+    pub fn add_virtual_edge(&mut self, from: &Uri, to: &Uri, relation: Relationship) {
         self.virtual_edges
             .push((from.clone(), to.clone(), relation));
     }
 
     /// 移除节点下游边
-    pub fn remove_outgoing_edge(&mut self, uri: &Url) {
+    pub fn remove_outgoing_edge(&mut self, uri: &Uri) {
         let idx = self.idx_map[uri];
         let edges = self
             .graph
@@ -113,7 +113,7 @@ impl RenderCacheGraph {
     }
 
     /// 移除节点，同时移除节点上的边，同时删除对应的文件
-    pub fn remove_node(&mut self, uri: &Url, root_uri: &Url, target_root_uri: &Url) -> RenderCache {
+    pub fn remove_node(&mut self, uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) -> RenderCache {
         let idx = self.idx_map[uri];
         let cache = self.graph.remove_node(idx).unwrap();
         self.remove_node_file(uri, root_uri, target_root_uri);
@@ -130,7 +130,7 @@ impl RenderCacheGraph {
     }
 
     /// 更新上游节点版本
-    pub fn update_incoming_node_version(&mut self, uri: &Url) {
+    pub fn update_incoming_node_version(&mut self, uri: &Uri) {
         let idx = self.idx_map[uri];
         let edges = self.graph.edges_directed(idx, Direction::Incoming);
         let mut nodes = vec![];
@@ -151,7 +151,7 @@ impl RenderCacheGraph {
 /// render
 impl RenderCacheGraph {
     /// 渲染到文件系统
-    pub fn render(&self, root_uri: &Url, target_root_uri: &Url) {
+    pub fn render(&self, root_uri: &Uri, target_root_uri: &Uri) {
         for node in self.graph.node_indices() {
             let cache = &self.graph[node];
             if let RenderCache::VueRenderCache(_) = cache {
@@ -166,7 +166,7 @@ impl RenderCacheGraph {
     }
 
     /// 渲染单个节点到文件系统
-    pub fn render_node(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
+    pub fn render_node(&self, uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) {
         let node = self.idx_map[uri];
         let cache = &self.graph[node];
         match cache {
@@ -184,7 +184,7 @@ impl RenderCacheGraph {
                 let uri = &self.url_map[&node];
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
                 if !target_path.exists() {
-                    let src_path = uri.to_file_path().unwrap();
+                    let src_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
                     tokio::spawn(async {
                         fs::hard_link(src_path, target_path).await.unwrap();
                     });
@@ -197,7 +197,7 @@ impl RenderCacheGraph {
     /// 获取节点渲染内容
     /// 如果是 vue 节点，那么获取渲染后的内容
     /// 如果是 ts 节点，那么返回 None
-    pub fn get_node_render_content(&self, uri: &Url) -> Option<String> {
+    pub fn get_node_render_content(&self, uri: &Uri) -> Option<String> {
         let node = self.idx_map[uri];
         let cache = &self.graph[node];
         if let RenderCache::VueRenderCache(cache) = cache {
@@ -226,7 +226,7 @@ impl RenderCacheGraph {
     }
 
     /// 删除节点对应的文件
-    fn remove_node_file(&self, uri: &Url, root_uri: &Url, target_root_uri: &Url) {
+    fn remove_node_file(&self, uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) {
         let node = self.idx_map[uri];
         let uri = &self.url_map[&node];
         let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
@@ -239,7 +239,7 @@ impl RenderCacheGraph {
 /// extends
 impl RenderCacheGraph {
     /// 移除继承关系
-    pub fn remove_extends_edge(&mut self, uri: &Url) {
+    pub fn remove_extends_edge(&mut self, uri: &Uri) {
         let idx = self.idx_map[uri];
         let edge = self
             .graph
@@ -252,7 +252,7 @@ impl RenderCacheGraph {
     }
 
     /// 获取当前节点的所有继承属性
-    fn get_extends_props(&self, uri: &Url) -> Vec<RenderCacheProp> {
+    fn get_extends_props(&self, uri: &Uri) -> Vec<RenderCacheProp> {
         let node = self.idx_map[uri];
         let mut extends_props = vec![];
         let mut next_node = self.get_extends_node(node);
@@ -315,7 +315,7 @@ impl RenderCacheGraph {
 /// transfer
 impl RenderCacheGraph {
     /// 移除转换关系
-    pub fn remove_transfers_edges(&mut self, uri: &Url) {
+    pub fn remove_transfers_edges(&mut self, uri: &Uri) {
         let idx = self.idx_map[uri];
         let edges = self
             .graph
@@ -331,9 +331,9 @@ impl RenderCacheGraph {
     /// 从转换关系获取节点，返回 transfer_node 和 export_name
     pub fn get_transfer_node(
         &self,
-        uri: &Url,
+        uri: &Uri,
         export_name: &Option<String>,
-    ) -> Option<(&Url, Option<String>)> {
+    ) -> Option<(&Uri, Option<String>)> {
         let node = self.idx_map[uri];
         let edges = self.graph.edges_directed(node, Direction::Outgoing);
         for edge in edges {
@@ -361,7 +361,7 @@ impl RenderCacheGraph {
 impl RenderCacheGraph {
     /// 获取注册的名称及注册组件的节点数据
     /// 返回值：(registered_name, export_name, prop, cache)
-    pub fn get_registers(&self, uri: &Url) -> Vec<(String, Option<String>, Option<String>, &Url)> {
+    pub fn get_registers(&self, uri: &Uri) -> Vec<(String, Option<String>, Option<String>, &Uri)> {
         let node = self.idx_map[uri];
         let edges = self
             .graph
@@ -384,9 +384,9 @@ impl RenderCacheGraph {
     /// 获取注册组件名称对应的 uri
     pub fn get_register(
         &self,
-        uri: &Url,
+        uri: &Uri,
         registered_name: &str,
-    ) -> Option<(&Url, &RegisterRelationship)> {
+    ) -> Option<(&Uri, &RegisterRelationship)> {
         let node = self.idx_map[uri];
         let mut edges = self
             .graph
@@ -397,7 +397,7 @@ impl RenderCacheGraph {
     }
 
     /// 移除注册关系
-    pub fn remove_registers_edges(&mut self, uri: &Url) {
+    pub fn remove_registers_edges(&mut self, uri: &Uri) {
         let idx = self.idx_map[uri];
         let edges = self
             .graph
@@ -411,10 +411,10 @@ impl RenderCacheGraph {
     }
 }
 
-impl Index<&Url> for RenderCacheGraph {
+impl Index<&Uri> for RenderCacheGraph {
     type Output = RenderCache;
 
-    fn index(&self, index: &Url) -> &Self::Output {
+    fn index(&self, index: &Uri) -> &Self::Output {
         self.get(index).unwrap()
     }
 }

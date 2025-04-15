@@ -1,12 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::*;
 
-use crate::{
-    lazy::REG_TYPESCRIPT_MODULE,
-    renderer::{Mapping, Renderer},
-};
+use crate::{lazy::REG_TYPESCRIPT_MODULE, renderer::Renderer};
 
 use super::convert_options::ConvertOptions;
 
@@ -17,13 +14,13 @@ pub trait ConvertBack {
     async fn convert_back(self, options: &ConvertOptions) -> Self;
 }
 
-impl ConvertBack for Url {
+impl ConvertBack for Uri {
     /// 必须 root_uri, target_uri
     async fn convert_back(mut self, options: &ConvertOptions<'_>) -> Self {
         let (root_uri, target_uri) = options.root_uri_target_uri();
-        let dest_path = self.to_file_path().unwrap();
-        let src_dir = root_uri.to_file_path().unwrap();
-        let dest_dir = target_uri.to_file_path().unwrap();
+        let dest_path = PathBuf::from_str(&self.path().to_string()).unwrap();
+        let src_dir = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
+        let dest_dir = PathBuf::from_str(&target_uri.path().to_string()).unwrap();
         // 计算相对路径
         if let Ok(rel_path) = dest_path.strip_prefix(dest_dir.as_path()) {
             // 转换为原路径
@@ -33,7 +30,7 @@ impl ConvertBack for Url {
             if dest_path.to_str().unwrap().ends_with(".vue.ts") {
                 src_path = &src_path[..src_path.len() - 3]; // .ts 总是3个字符
             }
-            self.set_path(src_path);
+            self = Uri::from_str(&format!("{}://{}", self.scheme().unwrap(), src_path)).unwrap();
         }
         self
     }
@@ -74,13 +71,13 @@ impl ConvertBack for HoverContents {
     /// 必须 root_uri, target_uri
     async fn convert_back(self, options: &ConvertOptions<'_>) -> Self {
         let (root_uri, target_uri) = options.root_uri_target_uri();
-        fn convert_back_module(s: String, root_uri: &Url, target_uri: &Url) -> String {
+        fn convert_back_module(s: String, root_uri: &Uri, target_uri: &Uri) -> String {
             if s.contains("```typescript\nmodule") {
                 if let Some(caps) = REG_TYPESCRIPT_MODULE.captures(&s) {
                     let dest_path = caps.get(1).map_or("", |m| m.as_str());
                     if dest_path != "*.vue" && !dest_path.contains("/node_modules/") {
                         let src_path = Renderer::get_source_path(
-                            &Url::from_file_path(dest_path).unwrap(),
+                            &Uri::from_str(&format!("file://{}", dest_path)).unwrap(),
                             root_uri,
                             target_uri,
                         );
@@ -551,7 +548,7 @@ impl ConvertBack for SemanticTokensRangeResult {
     }
 }
 
-impl ConvertBack for HashMap<Url, Vec<TextEdit>> {
+impl ConvertBack for HashMap<Uri, Vec<TextEdit>> {
     /// 必须 root_uri, target_uri
     async fn convert_back(self, options: &ConvertOptions<'_>) -> Self {
         let mut result = HashMap::new();

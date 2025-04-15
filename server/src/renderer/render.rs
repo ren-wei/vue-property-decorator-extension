@@ -1,6 +1,6 @@
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::{path::PathBuf, str::FromStr};
 
 use lsp_textdocument::FullTextDocument;
 use tokio::{
@@ -9,7 +9,7 @@ use tokio::{
 };
 use tower_lsp::lsp_types::{
     CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, RenameFilesParams,
-    TextDocumentContentChangeEvent, Url, VersionedTextDocumentIdentifier,
+    TextDocumentContentChangeEvent, Uri, VersionedTextDocumentIdentifier,
 };
 use tracing::{debug, error, warn};
 use walkdir::WalkDir;
@@ -28,8 +28,8 @@ use super::{
 
 impl Renderer {
     /// 创建渲染目录，并进行渲染
-    pub async fn init(&mut self, root_uri: &Url) {
-        let src_path = root_uri.to_file_path().unwrap();
+    pub async fn init(&mut self, root_uri: &Uri) {
+        let src_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
         // 在当前项目所在的目录创建增加了 `.~$` 前缀的同名目录
         let mut target_root_path = src_path.clone();
         target_root_path.pop();
@@ -45,7 +45,8 @@ impl Renderer {
         let node_modules_src_path = src_path.join("node_modules");
         let node_modules_target_path = target_root_path.join("node_modules");
 
-        let target_root_uri = Url::from_file_path(target_root_path).unwrap();
+        let target_root_uri =
+            Uri::from_str(&format!("file://{}", target_root_path.to_string_lossy())).unwrap();
         self.root_uri_target_uri = Some((root_uri.clone(), target_root_uri.clone()));
         self.render(root_uri, &target_root_uri).await;
 
@@ -101,7 +102,7 @@ impl Renderer {
     /// * 更新继承自当前文件的文件
     pub async fn update(
         &mut self,
-        uri: &Url,
+        uri: &Uri,
         params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) -> DidChangeTextDocumentParams {
@@ -169,7 +170,7 @@ impl Renderer {
     }
 
     /// 保存 vue 节点，重新全量渲染，返回变更内容
-    pub async fn save(&mut self, uri: &Url) -> Option<DidChangeTextDocumentParams> {
+    pub async fn save(&mut self, uri: &Uri) -> Option<DidChangeTextDocumentParams> {
         // 保存前再次全量解析 vue 节点为 update 出错提供修复机会
         let version = self.render_cache.get(uri).unwrap().get_version()?;
         self.render_cache.remove_outgoing_edge(uri);
@@ -205,12 +206,12 @@ impl Renderer {
     }
 
     /// 是否需要等待文件创建
-    pub fn is_wait_create(&self, uri: &Url) -> bool {
+    pub fn is_wait_create(&self, uri: &Uri) -> bool {
         self.will_create_files.contains(uri)
     }
 
     /// 文件打开时检查节点是否存在，如果节点不存在，那么先创建节点
-    pub async fn did_open(&mut self, uri: &Url) {
+    pub async fn did_open(&mut self, uri: &Uri) {
         if self.render_cache.get(uri).is_none() {
             let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
             self.create_node(uri).await;
@@ -222,7 +223,7 @@ impl Renderer {
 
     pub fn will_create_files(&mut self, params: &CreateFilesParams) {
         for file in &params.files {
-            let uri = Url::from_str(&file.uri).unwrap();
+            let uri = Uri::from_str(&file.uri).unwrap();
             if Renderer::is_uri_valid(&uri) {
                 self.will_create_files.insert(uri);
             }
@@ -232,7 +233,7 @@ impl Renderer {
     pub async fn did_create_files(&mut self, params: CreateFilesParams) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
-            let uri = Url::from_str(&file.uri).unwrap();
+            let uri = Uri::from_str(&file.uri).unwrap();
             if Renderer::is_uri_valid(&uri) {
                 self.create_node(&uri).await;
                 self.render_cache
@@ -245,10 +246,10 @@ impl Renderer {
 
     pub fn will_rename_files(&mut self, params: &RenameFilesParams) {
         for file in &params.files {
-            let uri = Url::from_str(&file.new_uri).unwrap();
+            let uri = Uri::from_str(&file.new_uri).unwrap();
             if Renderer::is_uri_valid(&uri) {
                 self.will_create_files
-                    .insert(Url::from_str(&file.new_uri).unwrap());
+                    .insert(Uri::from_str(&file.new_uri).unwrap());
             }
         }
     }
@@ -256,13 +257,13 @@ impl Renderer {
     pub async fn did_rename_files(&mut self, params: RenameFilesParams) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
-            let old_uri = Url::from_str(&file.old_uri).unwrap();
+            let old_uri = Uri::from_str(&file.old_uri).unwrap();
             if Renderer::is_uri_valid(&old_uri) {
                 self.render_cache
                     .remove_node(&old_uri, &root_uri, &target_root_uri);
             }
 
-            let new_uri = Url::from_str(&file.new_uri).unwrap();
+            let new_uri = Uri::from_str(&file.new_uri).unwrap();
             if Renderer::is_uri_valid(&new_uri) {
                 self.create_node(&new_uri).await;
                 self.render_cache
@@ -276,7 +277,7 @@ impl Renderer {
     pub async fn did_delete_files(&mut self, params: DeleteFilesParams) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
         for file in params.files {
-            let uri = Url::from_str(&file.uri).unwrap();
+            let uri = Uri::from_str(&file.uri).unwrap();
             if self.render_cache.get(&uri).is_some() {
                 self.render_cache.update_incoming_node_version(&uri);
                 self.render_cache
@@ -288,8 +289,8 @@ impl Renderer {
 
 impl Renderer {
     /// 从项目目录获取 tsconfig.json 并从中获取别名映射关系
-    async fn init_tsconfig_paths(&mut self, root_uri: &Url) -> Option<()> {
-        let root_path = root_uri.to_file_path().unwrap();
+    async fn init_tsconfig_paths(&mut self, root_uri: &Uri) -> Option<()> {
+        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
         let tsconfig_path = root_path.join("tsconfig.json");
         if tsconfig_path.exists() {
             match File::open(tsconfig_path).await {
@@ -308,8 +309,8 @@ impl Renderer {
 
     /// 读取目录下的文件，并渲染到目标目录
     /// 同时构建组件间关系图
-    async fn render(&mut self, root_uri: &Url, target_root_uri: &Url) {
-        let root_path = root_uri.to_file_path().unwrap();
+    async fn render(&mut self, root_uri: &Uri, target_root_uri: &Uri) {
+        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
         // 遍历目录
         for entry in WalkDir::new(root_path.clone())
             .follow_links(true)
@@ -323,7 +324,7 @@ impl Renderer {
         {
             if let Ok(entry) = entry {
                 let src_path = entry.path();
-                let uri = Url::from_file_path(src_path).unwrap();
+                let uri = Uri::from_str(&format!("file://{}", src_path.to_string_lossy())).unwrap();
                 let target_path = Renderer::get_target_path(&uri, root_uri, target_root_uri);
 
                 // 如果父目录不存在，先创建父目录
@@ -363,7 +364,7 @@ impl Renderer {
     /// * 如果是 vue 文件，那么创建 vue 节点
     /// * 如果是 ts 文件，那么创建 ts 节点
     /// * 如果都不是或者创建失败，那么创建 Unknown 节点
-    async fn create_node(&mut self, uri: &Url) {
+    async fn create_node(&mut self, uri: &Uri) {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
         if Renderer::is_vue_component(uri) {
             self.create_vue_node(uri, document).await;
@@ -373,7 +374,7 @@ impl Renderer {
     }
 
     /// 创建节点及相关的边
-    async fn create_node_from_document(&mut self, uri: &Url, document: FullTextDocument) {
+    async fn create_node_from_document(&mut self, uri: &Uri, document: FullTextDocument) {
         if Renderer::is_vue_component(uri) {
             self.create_vue_node(uri, document).await;
         } else {
@@ -384,7 +385,7 @@ impl Renderer {
     /// 创建 vue 节点
     /// * 如果存在继承关系，那么创建继承边
     /// * 如果存在注册关系，那么创建注册边
-    async fn create_vue_node(&mut self, uri: &Url, document: FullTextDocument) {
+    async fn create_vue_node(&mut self, uri: &Uri, document: FullTextDocument) {
         let result = vue_render_cache::parse_vue_file(&document);
         self.render_cache.add_node(
             uri,
@@ -414,7 +415,7 @@ impl Renderer {
     /// * 如果存在组件并且存在继承关系，那么创建继承边
     /// * 如果存在组件并且存在注册关系，那么创建注册边
     /// * 创建节点间中转关系
-    async fn create_ts_node(&mut self, uri: &Url, document: FullTextDocument) {
+    async fn create_ts_node(&mut self, uri: &Uri, document: FullTextDocument) {
         let result = ts_render_cache::parse_ts_file(&document);
         let mut ts_component = None;
         if let Some((name_range, description, props, extends_component, registers)) =
@@ -439,7 +440,7 @@ impl Renderer {
         self.create_transfers_relation(uri, result.transfers);
     }
 
-    async fn create_lib_node(&mut self, uri: &Url) {
+    async fn create_lib_node(&mut self, uri: &Uri) {
         self.render_cache.add_node(
             uri,
             RenderCache::LibRenderCache(lib_render_cache::parse_specific_lib(uri)),
@@ -447,7 +448,7 @@ impl Renderer {
     }
 
     /// 创建继承关系
-    fn create_extends_relation(&mut self, uri: &Url, extends_component: Option<ExtendsComponent>) {
+    fn create_extends_relation(&mut self, uri: &Uri, extends_component: Option<ExtendsComponent>) {
         if let Some(component) = extends_component {
             let extends_uri = self.get_uri_from_path(uri, &component.path);
             if let Some(extends_uri) = extends_uri {
@@ -467,7 +468,7 @@ impl Renderer {
     }
 
     /// 创建注册关系
-    fn create_registers_relation(&mut self, uri: &Url, registers: Vec<RegisterComponent>) {
+    fn create_registers_relation(&mut self, uri: &Uri, registers: Vec<RegisterComponent>) {
         for register in registers {
             let register_uri = self.get_uri_from_path(&uri, &register.path);
             if let Some(register_uri) = register_uri {
@@ -497,7 +498,7 @@ impl Renderer {
     /// 更新转换关系
     fn create_transfers_relation(
         &mut self,
-        uri: &Url,
+        uri: &Uri,
         transfers: Vec<(Option<String>, Option<String>, String, bool)>,
     ) {
         for (local, export_name, path, is_star_export) in transfers {
@@ -518,7 +519,7 @@ impl Renderer {
     }
 
     /// 从导入路径获取 uri，如果对应的文件不存在，返回 None
-    fn get_uri_from_path(&self, base_uri: &Url, path: &str) -> Option<Url> {
+    fn get_uri_from_path(&self, base_uri: &Uri, path: &str) -> Option<Uri> {
         let file_path = parse_import_path::parse_import_path(
             base_uri,
             path,
@@ -526,7 +527,9 @@ impl Renderer {
             &self.root_uri_target_uri.as_ref().unwrap().0,
         );
         if file_path.is_dir() && file_path.to_string_lossy().contains("/node_modules/") {
-            return Some(Url::from_file_path(file_path).unwrap());
+            return Some(
+                Uri::from_str(&format!("file://{}", file_path.to_string_lossy())).unwrap(),
+            );
         }
 
         // 如果文件不存在，那么尝试添加后缀
@@ -537,17 +540,22 @@ impl Renderer {
                     let new_file_name = format!("{}{}", file_name.to_str().unwrap(), suffix);
                     let new_file_path = file_path.with_file_name(new_file_name);
                     if new_file_path.is_file() {
-                        return Some(Url::from_file_path(new_file_path).unwrap());
+                        return Some(
+                            Uri::from_str(&format!("file://{}", new_file_path.to_string_lossy()))
+                                .unwrap(),
+                        );
                     }
                 }
             }
             let new_file_path = file_path.join("index.ts");
             if new_file_path.is_file() {
-                return Some(Url::from_file_path(new_file_path).unwrap());
+                return Some(
+                    Uri::from_str(&format!("file://{}", new_file_path.to_string_lossy())).unwrap(),
+                );
             }
             None
         } else {
-            Some(Url::from_file_path(file_path).unwrap())
+            Some(Uri::from_str(&format!("file://{}", file_path.to_string_lossy())).unwrap())
         }
     }
 }
