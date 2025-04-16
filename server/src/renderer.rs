@@ -20,12 +20,13 @@ use tokio::io::AsyncReadExt;
 use tower_lsp::lsp_types::Location;
 
 use std::collections::HashSet;
-use std::str::FromStr;
 use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
 
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::{Position, Range, Uri};
 use tracing::error;
+
+use crate::util;
 
 /// # 渲染器
 /// 将项目渲染到同目录下的加上 `.~$` 前缀的目录中
@@ -54,6 +55,11 @@ impl Renderer {
 
     pub fn root_uri_target_uri(&self) -> &Option<(Uri, Uri)> {
         &self.root_uri_target_uri
+    }
+
+    #[cfg(test)]
+    pub fn set_root_uri_target_uri(&mut self, root_uri: Uri, target_uri: Uri) {
+        self.root_uri_target_uri = Some((root_uri, target_uri));
     }
 
     pub fn get_document(&self, uri: &Uri) -> Option<&FullTextDocument> {
@@ -258,7 +264,7 @@ impl Renderer {
         let mut content = String::new();
         let temp_path;
 
-        let path_str = uri.path().to_string();
+        let path_str = util::to_file_path_string(uri);
         let path: &str = if OS == "windows" {
             temp_path =
                 percent_encoding::percent_decode(&path_str[1..].as_bytes()).decode_utf8_lossy();
@@ -279,14 +285,12 @@ impl Renderer {
                 return Err(Error::new(std::io::ErrorKind::NotFound, path));
             }
         }
-        let language_id =
-            uri.path().to_string()[uri.path().to_string().rfind(".").unwrap() + 1..].to_string();
+        let language_id = path_str[path_str.rfind(".").unwrap() + 1..].to_string();
         Ok(FullTextDocument::new(language_id, 1, content))
     }
 
     pub fn is_vue_component(uri: &Uri) -> bool {
-        PathBuf::from_str(&uri.path().to_string())
-            .unwrap()
+        util::to_file_path(uri)
             .extension()
             .is_some_and(|v| v == "vue")
     }
@@ -296,17 +300,17 @@ impl Renderer {
     /// * 存在于文件系统中
     /// * 不在 node_modules 中
     pub fn is_uri_valid(uri: &Uri) -> bool {
-        let file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+        let file_path = util::to_file_path(uri);
         file_path.exists()
             && file_path.is_file()
-            && !uri.path().to_string().contains("/node_modules/")
+            && !file_path.to_string_lossy().contains("/node_modules/")
     }
 
     /// uri 是否指向 node_modules 下的库
     /// * 是目录
     /// * 存在于文件系统中
     pub fn is_node_modules(uri: &Uri) -> bool {
-        let file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+        let file_path = util::to_file_path(uri);
         file_path.exists()
             && file_path.is_dir()
             && file_path.to_string_lossy().contains("/node_modules/")
@@ -347,9 +351,9 @@ impl Renderer {
 
     /// 获取目标路径
     fn get_target_path(uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) -> PathBuf {
-        let src_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
-        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
-        let target_root_path = PathBuf::from_str(&target_root_uri.path().to_string()).unwrap();
+        let src_path = util::to_file_path(uri);
+        let root_path = util::to_file_path(root_uri);
+        let target_root_path = util::to_file_path(target_root_uri);
         // 计算相对路径
         let rel_path = src_path.strip_prefix(&root_path).unwrap().to_path_buf();
         // 转换为目标路径
@@ -365,9 +369,9 @@ impl Renderer {
 
     /// 获取原路径
     pub fn get_source_path(uri: &Uri, root_uri: &Uri, target_root_uri: &Uri) -> PathBuf {
-        let target_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
-        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
-        let target_root_path = PathBuf::from_str(&target_root_uri.path().to_string()).unwrap();
+        let target_path = util::to_file_path(uri);
+        let root_path = util::to_file_path(root_uri);
+        let target_root_path = util::to_file_path(target_root_uri);
         // 计算相对路径
         let rel_path = target_path
             .strip_prefix(target_root_path)

@@ -27,6 +27,7 @@ export function activate(context: ExtensionContext) {
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: "file", language: "typescript" }, { scheme: "file", language: "vue" }],
+        progressOnInitialization: true,
     };
 
     // Create the language client and start the client.

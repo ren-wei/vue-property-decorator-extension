@@ -1,5 +1,5 @@
 use html_languageservice::html_data::Description;
-use std::{collections::HashMap, fs, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, fs, path::PathBuf};
 use tower_lsp::lsp_types::Location;
 
 use lsp_textdocument::FullTextDocument;
@@ -7,7 +7,7 @@ use swc_common::source_map::SmallPos;
 use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem, Stmt};
 use tower_lsp::lsp_types::{Range, Uri};
 
-use crate::ast;
+use crate::{ast, util};
 
 pub struct LibRenderCache {
     pub name: String,
@@ -41,7 +41,7 @@ pub async fn _parse_lib(uri: &Uri) -> Vec<LibComponent> {
     // 如果遇到 export * from './xxx'，那么递归解析
     // 获取继承自 Vue 的组件的 ClassExpr
     let components = vec![];
-    let mut file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+    let mut file_path = util::to_file_path(uri);
     file_path.push("types/index.d.ts");
     if file_path.is_file() {
         let _idx_map = _parse_file(file_path);
@@ -105,11 +105,11 @@ fn _parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
 /// * 如果遍历 types 目录时是一个目录，那么存在静态属性的文件是主组件其他组件挂载到该组件下
 pub fn parse_specific_lib(uri: &Uri) -> LibRenderCache {
     let mut components = vec![];
-    let mut file_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+    let mut file_path = util::to_file_path(uri);
     let name = file_path
         .file_name()
         .map(|v| v.to_string_lossy().to_string())
-        .unwrap_or(uri.path().to_string());
+        .unwrap_or(util::to_file_path_string(uri));
     file_path.push("types/index.d.ts");
     if file_path.is_file() {
         file_path.pop();
@@ -193,11 +193,7 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                                     props.push(LibComponentProp {
                                         name,
                                         location: Location {
-                                            uri: Uri::from_str(&format!(
-                                                "file://{}",
-                                                path.to_string_lossy()
-                                            ))
-                                            .unwrap(),
+                                            uri: util::create_uri_from_path(&path),
                                             range: Range {
                                                 start: document.position_at(prop.span.lo.to_u32()),
                                                 end: document.position_at(prop.span.hi.to_u32()),
@@ -209,7 +205,7 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                         }
                     }
                     let name_location = Location {
-                        uri: Uri::from_str(&format!("file://{}", path.to_string_lossy())).unwrap(),
+                        uri: util::create_uri_from_path(&path),
                         range: Range::new(
                             document.position_at(class.span.lo.to_u32()),
                             document.position_at(class.span.hi.to_u32()),

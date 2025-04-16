@@ -21,20 +21,22 @@ use tower_lsp::lsp_types::{
     DocumentSymbolResponse, ExecuteCommandOptions, ExecuteCommandParams, FileOperationFilter,
     FileOperationPattern, FileOperationRegistrationOptions, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult,
-    InitializedParams, RenameFilesParams, SemanticTokensParams, SemanticTokensRangeParams,
-    SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Uri, WorkDoneProgressOptions, WorkspaceEdit,
-    WorkspaceFileOperationsServerCapabilities, WorkspaceServerCapabilities,
+    InitializedParams, MessageType, RenameFilesParams, SemanticTokensParams,
+    SemanticTokensRangeParams, SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Uri, WorkDoneProgressOptions,
+    WorkspaceEdit, WorkspaceFileOperationsServerCapabilities, WorkspaceServerCapabilities,
 };
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
 
 use crate::renderer::{PositionType, Renderer};
 use crate::ts_server::TsServer;
+use crate::util;
 use crate::vue_data::VueDataProvider;
 
 pub struct VueLspServer {
     is_shared: bool,
+    client: Client,
     text_documents: Arc<Mutex<TextDocuments>>,
     data_manager: Mutex<HTMLDataManager>,
     html_server: Mutex<HTMLLanguageService>,
@@ -57,7 +59,10 @@ impl VueLspServer {
             Arc::new(Mutex::new(TextDocuments::new()))
         };
         let renderer = Arc::new(Mutex::new(Renderer::new()));
-        let ts_server = Arc::new(RwLock::new(TsServer::new(client, Arc::clone(&renderer))));
+        let ts_server = Arc::new(RwLock::new(TsServer::new(
+            client.clone(),
+            Arc::clone(&renderer),
+        )));
         let data_manager = Mutex::new(HTMLDataManager::default());
         let html_server = Mutex::new(HTMLLanguageService::new(
             &HTMLLanguageServiceOptions::default(),
@@ -65,6 +70,7 @@ impl VueLspServer {
         let vue_data_provider = VueDataProvider::new();
         VueLspServer {
             is_shared,
+            client,
             text_documents,
             data_manager,
             html_server,
@@ -98,7 +104,7 @@ impl VueLspServer {
 
     /// 是否处理 uri
     fn is_uri_valid(uri: &Uri) -> bool {
-        !uri.path().to_string().contains("/node_modules/")
+        !util::to_file_path_string(uri).contains("/node_modules/")
     }
 }
 
@@ -123,8 +129,23 @@ impl LanguageServer for VueLspServer {
                     ..Default::default()
                 });
             }
+            self.client
+                .log_message(MessageType::LOG, format!("{:#?}", params))
+                .await;
             let root_uri = &folders[0].uri;
-            self.renderer.lock().await.init(root_uri).await;
+            self.renderer
+                .lock()
+                .await
+                .init(
+                    root_uri,
+                    &self.client,
+                    params
+                        .work_done_progress_params
+                        .work_done_token
+                        .clone()
+                        .unwrap(),
+                )
+                .await;
             let result = self.ts_server.write().await.initialize(params).await?;
             let file_operation = Some(FileOperationRegistrationOptions {
                 filters: vec![FileOperationFilter {

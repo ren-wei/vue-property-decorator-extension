@@ -2,7 +2,7 @@ pub mod lib_render_cache;
 pub mod ts_render_cache;
 pub mod vue_render_cache;
 
-use std::{collections::HashMap, ops::Index, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, ops::Index};
 
 use html_languageservice::html_data::Description;
 use lib_render_cache::LibRenderCache;
@@ -14,6 +14,8 @@ use tower_lsp::lsp_types::{TextDocumentContentChangeEvent, Uri};
 use tracing::{debug, error};
 use ts_render_cache::TsRenderCache;
 use vue_render_cache::VueRenderCache;
+
+use crate::util;
 
 use super::{
     combined_rendered_results,
@@ -184,7 +186,7 @@ impl RenderCacheGraph {
                 let uri = &self.url_map[&node];
                 let target_path = Renderer::get_target_path(uri, root_uri, target_root_uri);
                 if !target_path.exists() {
-                    let src_path = PathBuf::from_str(&uri.path().to_string()).unwrap();
+                    let src_path = util::to_file_path(uri);
                     tokio::spawn(async {
                         fs::hard_link(src_path, target_path).await.unwrap();
                     });

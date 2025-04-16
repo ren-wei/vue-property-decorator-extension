@@ -17,6 +17,8 @@ use tower_lsp::lsp_types::{
 };
 use tracing::debug;
 
+use crate::util;
+
 use super::render_cache::RenderCache;
 use super::Renderer;
 
@@ -155,7 +157,7 @@ impl Renderer {
             }
         }
         // TODO: 获取继承节点注册的组件
-        let provider = ArcTagsProvider::new(uri.path().to_string(), tags, version);
+        let provider = ArcTagsProvider::new(util::to_file_path_string(uri), tags, version);
         self.provider_map.insert(uri.clone(), provider.clone());
         provider
     }

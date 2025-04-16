@@ -1,6 +1,8 @@
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use tower_lsp::lsp_types::*;
+
+use crate::util;
 
 use super::convert_options::ConvertOptions;
 
@@ -13,28 +15,19 @@ impl ConvertTo for Uri {
     async fn convert_to(mut self, options: &ConvertOptions<'_>) -> Self {
         let (root_uri, target_uri) = options.root_uri_target_uri();
 
-        let src_path = PathBuf::from_str(&self.path().to_string()).unwrap();
-        let src_dir = root_uri.path();
-        let dest_dir = PathBuf::from_str(&target_uri.path().to_string()).unwrap();
+        let src_path = util::to_file_path(&self);
+        let src_dir = util::to_file_path(root_uri);
+        let dest_dir = util::to_file_path(target_uri);
         // 计算相对路径
-        let rel_path = src_path.strip_prefix(&format!("{}/", src_dir)).unwrap();
+        let rel_path = src_path
+            .strip_prefix(&format!("{}/", src_dir.to_string_lossy()))
+            .unwrap();
         // 转换为目标路径
         let dest_path = dest_dir.join(&rel_path);
-        if rel_path.ends_with(".vue") {
-            self = Uri::from_str(&format!(
-                "{}://{}{}",
-                self.scheme().unwrap(),
-                dest_path.to_str().unwrap(),
-                ".ts"
-            ))
-            .unwrap();
+        if dest_path.to_string_lossy().ends_with(".vue") {
+            self = util::create_uri_from_str(&format!("{}{}", dest_path.to_string_lossy(), ".ts"));
         } else {
-            self = Uri::from_str(&format!(
-                "{}://{}",
-                self.scheme().unwrap(),
-                dest_path.to_str().unwrap()
-            ))
-            .unwrap();
+            self = util::create_uri_from_path(&dest_path);
         }
         self
     }
@@ -321,5 +314,47 @@ impl ConvertTo for ExecuteCommandParams {
                 .replace("vue2-ts-decorator_typescript", "_typescript"),
             ..self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use tower_lsp::lsp_types::Uri;
+
+    use crate::{convert::ConvertOptions, renderer::Renderer};
+
+    use super::ConvertTo;
+
+    async fn assert_uri(uri: &str, expected: &str) {
+        let mut renderer = Renderer::new();
+        renderer.set_root_uri_target_uri(
+            Uri::from_str("file:///home/user/project").unwrap(),
+            Uri::from_str("file:///home/user/.~$project").unwrap(),
+        );
+        let result = Uri::from_str(uri)
+            .unwrap()
+            .convert_to(&ConvertOptions {
+                uri: Some(&Uri::from_str(uri).unwrap()),
+                renderer: Some(&renderer),
+            })
+            .await
+            .to_string();
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn convert_uri() {
+        assert_uri(
+            "file:///home/user/project/src/a.vue",
+            "file:///home/user/.~%24project/src/a.vue.ts",
+        )
+        .await;
+        assert_uri(
+            "file:///home/user/project/src/a.ts",
+            "file:///home/user/.~%24project/src/a.ts",
+        )
+        .await;
     }
 }

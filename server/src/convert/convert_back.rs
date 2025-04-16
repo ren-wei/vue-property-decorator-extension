@@ -1,9 +1,9 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::collections::HashMap;
 
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::*;
 
-use crate::{lazy::REG_TYPESCRIPT_MODULE, renderer::Renderer};
+use crate::{lazy::REG_TYPESCRIPT_MODULE, renderer::Renderer, util};
 
 use super::convert_options::ConvertOptions;
 
@@ -18,11 +18,11 @@ impl ConvertBack for Uri {
     /// 必须 root_uri, target_uri
     async fn convert_back(mut self, options: &ConvertOptions<'_>) -> Self {
         let (root_uri, target_uri) = options.root_uri_target_uri();
-        let dest_path = PathBuf::from_str(&self.path().to_string()).unwrap();
-        let src_dir = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
-        let dest_dir = PathBuf::from_str(&target_uri.path().to_string()).unwrap();
+        let dest_path = util::to_file_path(&self);
+        let src_dir = util::to_file_path(root_uri);
+        let dest_dir = util::to_file_path(target_uri);
         // 计算相对路径
-        if let Ok(rel_path) = dest_path.strip_prefix(dest_dir.as_path()) {
+        if let Ok(rel_path) = dest_path.strip_prefix(dest_dir) {
             // 转换为原路径
             let src_path = src_dir.join(&rel_path);
             let mut src_path = src_path.to_str().unwrap();
@@ -30,7 +30,7 @@ impl ConvertBack for Uri {
             if dest_path.to_str().unwrap().ends_with(".vue.ts") {
                 src_path = &src_path[..src_path.len() - 3]; // .ts 总是3个字符
             }
-            self = Uri::from_str(&format!("{}://{}", self.scheme().unwrap(), src_path)).unwrap();
+            self = util::create_uri_from_str(src_path);
         }
         self
     }
@@ -77,7 +77,7 @@ impl ConvertBack for HoverContents {
                     let dest_path = caps.get(1).map_or("", |m| m.as_str());
                     if dest_path != "*.vue" && !dest_path.contains("/node_modules/") {
                         let src_path = Renderer::get_source_path(
-                            &Uri::from_str(&format!("file://{}", dest_path)).unwrap(),
+                            &util::create_uri_from_str(dest_path),
                             root_uri,
                             target_uri,
                         );
@@ -771,5 +771,47 @@ impl ConvertBack for ApplyWorkspaceEditParams {
             label: self.label,
             edit: self.edit.convert_back(options).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use tower_lsp::lsp_types::Uri;
+
+    use crate::{convert::ConvertOptions, renderer::Renderer};
+
+    use super::ConvertBack;
+
+    async fn assert_uri(uri: &str, expected: &str) {
+        let mut renderer = Renderer::new();
+        renderer.set_root_uri_target_uri(
+            Uri::from_str("file:///home/user/project").unwrap(),
+            Uri::from_str("file:///home/user/.~$project").unwrap(),
+        );
+        let result = Uri::from_str(uri)
+            .convert_back(&ConvertOptions {
+                uri: Some(&Uri::from_str(uri).unwrap()),
+                renderer: Some(&renderer),
+            })
+            .await
+            .unwrap()
+            .to_string();
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn convert_uri() {
+        assert_uri(
+            "file:///home/user/.~%24project/src/a.vue.ts",
+            "file:///home/user/project/src/a.vue",
+        )
+        .await;
+        assert_uri(
+            "file:///home/user/.~%24project/src/a.ts",
+            "file:///home/user/project/src/a.ts",
+        )
+        .await;
     }
 }

@@ -1,18 +1,25 @@
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use lsp_textdocument::FullTextDocument;
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
 };
-use tower_lsp::lsp_types::{
-    CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, RenameFilesParams,
-    TextDocumentContentChangeEvent, Uri, VersionedTextDocumentIdentifier,
+use tower_lsp::{
+    lsp_types::{
+        CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, ProgressToken,
+        RenameFilesParams, TextDocumentContentChangeEvent, Uri, VersionedTextDocumentIdentifier,
+    },
+    Client,
 };
+#[cfg(target_os = "windows")]
+use tower_lsp::{NotCancellable, OngoingProgress, Unbounded};
 use tracing::{debug, error, warn};
 use walkdir::WalkDir;
+
+use crate::util;
 
 use super::{
     parse_import_path,
@@ -28,8 +35,12 @@ use super::{
 
 impl Renderer {
     /// 创建渲染目录，并进行渲染
-    pub async fn init(&mut self, root_uri: &Uri) {
-        let src_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
+    pub async fn init(&mut self, root_uri: &Uri, client: &Client, work_done_token: ProgressToken) {
+        let progress = client
+            .progress(work_done_token, "Vue2 Language Server")
+            .begin()
+            .await;
+        let src_path = util::to_file_path(root_uri);
         // 在当前项目所在的目录创建增加了 `.~$` 前缀的同名目录
         let mut target_root_path = src_path.clone();
         target_root_path.pop();
@@ -45,9 +56,9 @@ impl Renderer {
         let node_modules_src_path = src_path.join("node_modules");
         let node_modules_target_path = target_root_path.join("node_modules");
 
-        let target_root_uri =
-            Uri::from_str(&format!("file://{}", target_root_path.to_string_lossy())).unwrap();
+        let target_root_uri = util::create_uri_from_path(&target_root_path);
         self.root_uri_target_uri = Some((root_uri.clone(), target_root_uri.clone()));
+        progress.report("Initializing...").await;
         self.render(root_uri, &target_root_uri).await;
 
         // 创建 node_modules 的链接
@@ -58,7 +69,11 @@ impl Renderer {
                 .unwrap();
             #[cfg(target_os = "windows")]
             {
-                fn copy_dir(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
+                async fn copy_dir(
+                    src: &PathBuf,
+                    dst: &PathBuf,
+                    progress: &OngoingProgress<Unbounded, NotCancellable>,
+                ) -> std::io::Result<()> {
                     // 创建目标目录
                     std::fs::create_dir_all(dst)?;
 
@@ -76,6 +91,14 @@ impl Renderer {
 
                         if src_path.is_dir() {
                             // 如果是目录，创建对应的目标目录
+                            if dst_path.parent().unwrap() == dst {
+                                progress
+                                    .report(format!(
+                                        "Copying: node_modules/{}",
+                                        dst_path.file_name().unwrap().to_string_lossy()
+                                    ))
+                                    .await;
+                            }
                             std::fs::create_dir_all(&dst_path)?;
                         } else {
                             // 如果是文件，复制文件
@@ -90,9 +113,12 @@ impl Renderer {
                     }
                     Ok(())
                 }
-                copy_dir(&node_modules_src_path, &node_modules_target_path).unwrap();
+                copy_dir(&node_modules_src_path, &node_modules_target_path, &progress)
+                    .await
+                    .unwrap();
             }
         }
+        progress.finish().await;
     }
 
     /// 当文件内容更改时
@@ -290,7 +316,7 @@ impl Renderer {
 impl Renderer {
     /// 从项目目录获取 tsconfig.json 并从中获取别名映射关系
     async fn init_tsconfig_paths(&mut self, root_uri: &Uri) -> Option<()> {
-        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
+        let root_path = util::to_file_path(root_uri);
         let tsconfig_path = root_path.join("tsconfig.json");
         if tsconfig_path.exists() {
             match File::open(tsconfig_path).await {
@@ -310,7 +336,7 @@ impl Renderer {
     /// 读取目录下的文件，并渲染到目标目录
     /// 同时构建组件间关系图
     async fn render(&mut self, root_uri: &Uri, target_root_uri: &Uri) {
-        let root_path = PathBuf::from_str(&root_uri.path().to_string()).unwrap();
+        let root_path = util::to_file_path(root_uri);
         // 遍历目录
         for entry in WalkDir::new(root_path.clone())
             .follow_links(true)
@@ -324,7 +350,7 @@ impl Renderer {
         {
             if let Ok(entry) = entry {
                 let src_path = entry.path();
-                let uri = Uri::from_str(&format!("file://{}", src_path.to_string_lossy())).unwrap();
+                let uri = util::create_uri_from_path(src_path);
                 let target_path = Renderer::get_target_path(&uri, root_uri, target_root_uri);
 
                 // 如果父目录不存在，先创建父目录
@@ -527,9 +553,7 @@ impl Renderer {
             &self.root_uri_target_uri.as_ref().unwrap().0,
         );
         if file_path.is_dir() && file_path.to_string_lossy().contains("/node_modules/") {
-            return Some(
-                Uri::from_str(&format!("file://{}", file_path.to_string_lossy())).unwrap(),
-            );
+            return Some(util::create_uri_from_path(&file_path));
         }
 
         // 如果文件不存在，那么尝试添加后缀
@@ -540,22 +564,17 @@ impl Renderer {
                     let new_file_name = format!("{}{}", file_name.to_str().unwrap(), suffix);
                     let new_file_path = file_path.with_file_name(new_file_name);
                     if new_file_path.is_file() {
-                        return Some(
-                            Uri::from_str(&format!("file://{}", new_file_path.to_string_lossy()))
-                                .unwrap(),
-                        );
+                        return Some(util::create_uri_from_path(&new_file_path));
                     }
                 }
             }
             let new_file_path = file_path.join("index.ts");
             if new_file_path.is_file() {
-                return Some(
-                    Uri::from_str(&format!("file://{}", new_file_path.to_string_lossy())).unwrap(),
-                );
+                return Some(util::create_uri_from_path(&new_file_path));
             }
             None
         } else {
-            Some(Uri::from_str(&format!("file://{}", file_path.to_string_lossy())).unwrap())
+            Some(util::create_uri_from_path(&file_path))
         }
     }
 }
