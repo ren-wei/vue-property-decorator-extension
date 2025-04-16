@@ -99,6 +99,9 @@ impl TsServer {
             initialization_options: Some(json!({
                 "locale": "zh-CN",
             })),
+            work_done_progress_params: WorkDoneProgressParams {
+                work_done_token: None,
+            },
             ..params.clone()
         };
         self.server.initialize(params).await
