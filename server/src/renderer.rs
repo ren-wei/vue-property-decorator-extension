@@ -20,7 +20,7 @@ use tokio::io::AsyncReadExt;
 use tower_lsp::lsp_types::Location;
 
 use std::collections::HashSet;
-use std::{collections::HashMap, env::consts::OS, io::Error, path::PathBuf};
+use std::{collections::HashMap, io::Error, path::PathBuf};
 
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::{Position, Range, Uri};
@@ -262,18 +262,9 @@ impl Renderer {
     }
     pub async fn get_document_from_file(uri: &Uri) -> Result<FullTextDocument, Error> {
         let mut content = String::new();
-        let temp_path;
 
-        let path_str = util::to_file_path_string(uri);
-        let path: &str = if OS == "windows" {
-            temp_path =
-                percent_encoding::percent_decode(&path_str[1..].as_bytes()).decode_utf8_lossy();
-            &temp_path
-        } else {
-            temp_path = percent_encoding::percent_decode(&path_str.as_bytes()).decode_utf8_lossy();
-            &temp_path
-        };
-        match File::open(path).await {
+        let path = util::to_file_path_string(uri);
+        match File::open(&path).await {
             Ok(mut file) => {
                 if let Err(err) = file.read_to_string(&mut content).await {
                     error!("error: {} - {}", path, err);
@@ -285,7 +276,7 @@ impl Renderer {
                 return Err(Error::new(std::io::ErrorKind::NotFound, path));
             }
         }
-        let language_id = path_str[path_str.rfind(".").unwrap() + 1..].to_string();
+        let language_id = path[path.rfind(".").unwrap() + 1..].to_string();
         Ok(FullTextDocument::new(language_id, 1, content))
     }
 

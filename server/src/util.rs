@@ -6,7 +6,7 @@ use std::{
 use percent_encoding::{self, AsciiSet, CONTROLS};
 use tower_lsp::lsp_types::Uri;
 
-const ASCII_SET: &AsciiSet = &CONTROLS.add(b' ').add(b'$');
+const ASCII_SET: &AsciiSet = &CONTROLS.add(b' ').add(b'$').add(b':');
 
 pub fn create_uri_from_path(path: &Path) -> Uri {
     let path = path.to_string_lossy();
@@ -14,9 +14,14 @@ pub fn create_uri_from_path(path: &Path) -> Uri {
 }
 
 pub fn create_uri_from_str(path: &str) -> Uri {
+    let add_prefix = path.contains(":") && !path.starts_with("/");
     let path = path.replace("\\", "/");
     let path = percent_encoding::percent_encode(path.as_bytes(), ASCII_SET).to_string();
-    Uri::from_str(&format!("file://{}", path)).unwrap()
+    if add_prefix {
+        Uri::from_str(&format!("file:///{}", path)).unwrap()
+    } else {
+        Uri::from_str(&format!("file://{}", path)).unwrap()
+    }
 }
 
 pub fn to_file_path(uri: &Uri) -> PathBuf {
@@ -24,6 +29,9 @@ pub fn to_file_path(uri: &Uri) -> PathBuf {
     let path = percent_encoding::percent_decode_str(&path)
         .decode_utf8_lossy()
         .to_string();
+    if path.contains(":") && path.starts_with("/") {
+        return PathBuf::from_str(&path[1..]).unwrap();
+    }
     PathBuf::from_str(&path).unwrap()
 }
 
@@ -61,5 +69,8 @@ mod tests {
     }
 
     #[test]
-    fn windows() {}
+    fn windows() {
+        assert_path("file:///d%3A/code/project", "d:/code/project");
+        assert_uri("d:/code/project", "file:///d%3A/code/project");
+    }
 }
