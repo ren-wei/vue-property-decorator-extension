@@ -3,7 +3,7 @@
 	"description": "locale service client",
 	"author": "ren-wei",
 	"license": "MIT",
-	"version": "0.0.1",
+	"version": "0.2.0",
 	"publisher": "ren-wei",
 	"repository": {
 		"type": "git",
