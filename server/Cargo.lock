@@ -361,6 +361,8 @@ dependencies = [
 [[package]]
 name = "html-languageservice"
 version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9997591acb5d3a86c76e9e004ea213e8b4de8cc340d3f7f95a37a76e38a562ab"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -1280,7 +1282,7 @@ checksum = "121c2a6cda46980bb0fcd1647ffaf6cd3fc79a013de288782836f6df9c48780e"
 
 [[package]]
 name = "tower-lsp"
-version = "0.21.0"
+version = "0.20.0"
 dependencies = [
  "async-trait",
  "auto_impl",
