@@ -199,51 +199,61 @@ impl VueRenderCache {
                     ) {
                         debug!("parse_script success");
                         // 尝试`解析脚本` 成功
-                        let mut is_change = false;
                         self.render_insert_offset = render_insert_offset;
                         self.name_range = (name_span.lo.to_usize(), name_span.hi.to_usize());
-                        is_change = is_change || self.description != description;
+                        let is_description_change = self.description != description;
                         self.description = description;
 
-                        is_change = is_change || self.props != props;
-                        let old_props_length = self
-                            .props
-                            .iter()
-                            .map(|v| v.name.clone())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                            .len() as u32;
+                        let is_props_change = self.props.len() != props.len() || {
+                            let mut old_props = self.props.iter();
+                            let mut props = props.iter();
+                            let mut is_change = false;
+                            while let Some(old_prop) = old_props.next() {
+                                if !old_prop.is_equal_exclude_range(props.next().unwrap()) {
+                                    is_change = true;
+                                    break;
+                                }
+                            }
+                            is_change
+                        };
+                        let mut changes = vec![change];
+                        if is_props_change {
+                            let old_props_length = self
+                                .props
+                                .iter()
+                                .map(|v| v.name.clone())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                                .len() as u32;
+                            let Position { line, character } = self
+                                .document
+                                .position_at(self.render_insert_offset as u32 + 1);
+                            // 属性变更
+                            changes.push(TextDocumentContentChangeEvent {
+                                range: Some(Range {
+                                    start: Position {
+                                        line,
+                                        character: character + 23,
+                                    },
+                                    end: Position {
+                                        line,
+                                        character: character + 23 + old_props_length,
+                                    },
+                                }),
+                                range_length: Some(old_props_length),
+                                text: props
+                                    .iter()
+                                    .map(|v| v.name.clone())
+                                    .collect::<Vec<_>>()
+                                    .join(","),
+                            });
+                        }
                         self.props = props;
 
                         self.safe_update_range = safe_update_range;
-                        let Position { line, character } = self
-                            .document
-                            .position_at(self.render_insert_offset as u32 + 1);
                         return Some(RenderCacheUpdateResult {
-                            changes: vec![
-                                change,
-                                // 属性变更
-                                TextDocumentContentChangeEvent {
-                                    range: Some(Range {
-                                        start: Position {
-                                            line,
-                                            character: character + 23,
-                                        },
-                                        end: Position {
-                                            line,
-                                            character: character + 23 + old_props_length,
-                                        },
-                                    }),
-                                    range_length: Some(old_props_length),
-                                    text: self
-                                        .props
-                                        .iter()
-                                        .map(|v| v.name.clone())
-                                        .collect::<Vec<_>>()
-                                        .join(","),
-                                },
-                            ],
-                            is_change,
+                            changes,
+                            is_change: is_description_change || is_props_change,
                             extends_component,
                             registers: Some(registers),
                             transfers: None,
