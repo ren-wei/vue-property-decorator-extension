@@ -50,7 +50,7 @@ impl TsRenderCache {
             Some(RenderCacheUpdateResult {
                 changes: vec![change],
                 is_change: true,
-                extends_component: ts_component.3,
+                extends_component: Some(ts_component.3),
                 registers: Some(ts_component.4),
                 transfers: Some(result.transfers),
             })

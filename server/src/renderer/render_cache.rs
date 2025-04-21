@@ -239,6 +239,19 @@ impl RenderCacheGraph {
 
 /// extends
 impl RenderCacheGraph {
+    /// 获取继承关系指向的 uri
+    #[cfg(test)]
+    pub fn get_extends_uri(&mut self, uri: &Uri) -> Option<&Uri> {
+        let idx = self.idx_map[uri];
+        let edge = self
+            .graph
+            .edges_directed(idx, Direction::Outgoing)
+            .find(|v| v.weight().is_extends())
+            .map(|v| v)?;
+        let node = edge.target();
+        Some(&self.url_map[&node])
+    }
+
     /// 移除继承关系
     pub fn remove_extends_edge(&mut self, uri: &Uri) {
         let idx = self.idx_map[uri];
@@ -476,7 +489,7 @@ pub struct RenderCacheUpdateResult {
     /// 更新是否影响其他组件
     pub is_change: bool,
     /// 继承组件如果更新，返回更新后的继承组件
-    pub extends_component: Option<ExtendsComponent>,
+    pub extends_component: Option<Option<ExtendsComponent>>,
     /// 注册关系如果更新，返回更新后的注册关系
     pub registers: Option<Vec<RegisterComponent>>,
     /// 转换关系如果更新，返回更新后的转换关系
@@ -491,6 +504,15 @@ pub struct RenderCacheProp {
     pub typ: RenderCachePropType,
     /// 如果存在 @prop 装饰器，那么表示装饰器中的参数
     pub prop_params: Option<RenderCachePropParam>,
+}
+
+impl RenderCacheProp {
+    pub fn is_equal_exclude_range(&self, other: &RenderCacheProp) -> bool {
+        self.name == other.name
+            && self.description == other.description
+            && self.typ == other.typ
+            && self.prop_params == other.prop_params
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

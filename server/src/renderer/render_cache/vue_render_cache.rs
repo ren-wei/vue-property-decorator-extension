@@ -254,7 +254,7 @@ impl VueRenderCache {
                         return Some(RenderCacheUpdateResult {
                             changes,
                             is_change: is_description_change || is_props_change,
-                            extends_component,
+                            extends_component: Some(extends_component),
                             registers: Some(registers),
                             transfers: None,
                         });

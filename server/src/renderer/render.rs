@@ -144,7 +144,7 @@ impl Renderer {
                 // 更新继承关系
                 if let Some(extends_component) = result.extends_component {
                     self.render_cache.remove_extends_edge(uri);
-                    self.create_extends_relation(uri, Some(extends_component));
+                    self.create_extends_relation(uri, extends_component);
                 }
                 // 更新注册关系
                 if let Some(registers) = result.registers {
@@ -157,6 +157,7 @@ impl Renderer {
                     self.create_transfers_relation(uri, transfers);
                 }
                 content_changes.append(&mut result.changes);
+                self.render_cache.flush();
             } else {
                 // 重新解析节点
                 self.render_cache.remove_outgoing_edge(uri);
@@ -604,10 +605,18 @@ mod tests {
     };
 
     use crate::renderer::{render_cache::RenderCacheGraph, Renderer};
+    use lazy_static::lazy_static;
 
-    const TEST1_INDEX: &str = "file:///path/project/src/test1/index.vue";
-    const TEST1_COMPONENT1: &str = "file:///path/project/src/test1/components/MyComponent1.vue";
-    const TEST1_COMPONENT2: &str = "file:///path/project/src/test1/components/MyComponent2.vue";
+    lazy_static! {
+        static ref TEST1_INDEX: Uri =
+            Uri::from_str("file:///path/project/src/test1/index.vue").unwrap();
+        static ref TEST1_COMPONENT1: Uri =
+            Uri::from_str("file:///path/project/src/test1/components/MyComponent1.vue").unwrap();
+        static ref TEST1_COMPONENT2: Uri =
+            Uri::from_str("file:///path/project/src/test1/components/MyComponent2.vue").unwrap();
+        static ref TEST1_COMPONENT3: Uri =
+            Uri::from_str("file:///path/project/src/test1/components/MyComponent3.vue").unwrap();
+    }
 
     fn create_renderer() -> Renderer {
         let cache_graph = RenderCacheGraph::new();
@@ -624,7 +633,7 @@ mod tests {
         };
         // test1/index.vue
         renderer.create_node_from_document(
-            &Uri::from_str(&TEST1_INDEX).unwrap(),
+            &TEST1_INDEX,
             FullTextDocument::new(
                 "vue".to_string(),
                 0,
@@ -651,7 +660,7 @@ mod tests {
         );
         // test1/MyComponent1.vue
         renderer.create_node_from_document(
-            &Uri::from_str(&TEST1_COMPONENT1).unwrap(),
+            &TEST1_COMPONENT1,
             FullTextDocument::new(
                 "vue".to_string(),
                 0,
@@ -661,7 +670,7 @@ mod tests {
                     "</template>",
                     "<script lang=\"ts\">",
                     "import { Component } from 'vue-property-decorator';",
-                    "import MyComponent2 from './MyComponent2';",
+                    "import MyComponent2 from './MyComponent2.vue';",
                     "@Component",
                     "export default class MyComponent1 extends MyComponent2 {",
                     "  @Prop({ type: String, required: true })",
@@ -676,7 +685,7 @@ mod tests {
         );
         // test1/MyComponent2.vue
         renderer.create_node_from_document(
-            &Uri::from_str(&TEST1_COMPONENT2).unwrap(),
+            &TEST1_COMPONENT2,
             FullTextDocument::new(
                 "vue".to_string(),
                 0,
@@ -699,6 +708,32 @@ mod tests {
                 .to_string(),
             ),
         );
+        // test1/MyComponent3.vue
+        renderer.create_node_from_document(
+            &TEST1_COMPONENT3,
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <div></div>",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "@Component",
+                    "export default class MyComponent2 extends Vue {",
+                    "  @Prop({ type: Boolean, default: false })",
+                    "  private disabled!: boolean;",
+                    "  private show = false;",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        renderer.render_cache.flush();
 
         renderer
     }
@@ -707,93 +742,90 @@ mod tests {
         FullTextDocument::new("vue".to_string(), 0, "".to_string())
     }
 
-    fn assert_update1_no_effect(
-        changes: Vec<TextDocumentContentChangeEvent>,
-        expected: Vec<TextDocumentContentChangeEvent>,
-    ) {
-        let mut renderer = create_renderer();
-        let params = DidChangeTextDocumentParams {
+    fn create_changes(
+        changes: &[(u32, u32, u32, u32, Option<u32>, &str)],
+    ) -> Vec<TextDocumentContentChangeEvent> {
+        changes
+            .iter()
+            .map(|v| TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: v.0,
+                        character: v.1,
+                    },
+                    end: Position {
+                        line: v.2,
+                        character: v.3,
+                    },
+                }),
+                range_length: v.4,
+                text: v.5.to_string(),
+            })
+            .collect()
+    }
+
+    fn create_params(
+        uri: &Uri,
+        changes: &[(u32, u32, u32, u32, Option<u32>, &str)],
+    ) -> DidChangeTextDocumentParams {
+        DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: Uri::from_str(TEST1_COMPONENT1).unwrap(),
+                uri: uri.clone(),
                 version: 1,
             },
-            content_changes: changes,
-        };
-        let result = renderer
-            .update(
-                &Uri::from_str(TEST1_COMPONENT1).unwrap(),
-                params,
-                &create_empty_document(),
-            )
-            .content_changes;
-        assert_eq!(result, expected);
-        // 上游节点应该未更新
+            content_changes: create_changes(changes),
+        }
+    }
+
+    #[test]
+    fn update_vue_script_props() {
+        let mut renderer = create_renderer();
+        let params = create_params(&TEST1_COMPONENT1, &[(9, 15, 9, 15, Some(0), "1")]);
+        let expected = create_changes(&[
+            (9, 15, 9, 15, Some(0), "1"),
+            (11, 24, 11, 34, Some(10), "title1,text"),
+        ]);
+        let result = renderer.update(&TEST1_COMPONENT1, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        // 上游节点应该更新
         assert_eq!(
             renderer
                 .render_cache
-                .get(&Uri::from_str(TEST1_INDEX).unwrap())
+                .get(&TEST1_INDEX)
                 .unwrap()
                 .get_version(),
-            Some(0)
-        );
-        // 其他组件应该未更新
-        assert_eq!(
-            renderer
-                .render_cache
-                .get(&Uri::from_str(TEST1_COMPONENT2).unwrap())
-                .unwrap()
-                .get_version(),
-            Some(0)
+            Some(1)
         );
     }
 
     #[test]
-    fn update_vue_template() {
-        assert_update1_no_effect(
-            vec![TextDocumentContentChangeEvent {
-                range: Some(Range {
-                    start: Position {
-                        line: 1,
-                        character: 14,
-                    },
-                    end: Position {
-                        line: 1,
-                        character: 14,
-                    },
-                }),
-                range_length: Some(0),
-                text: "1".to_string(),
-            }],
-            vec![
-                TextDocumentContentChangeEvent {
-                    range: Some(Range {
-                        start: Position {
-                            line: 1,
-                            character: 14,
-                        },
-                        end: Position {
-                            line: 1,
-                            character: 14,
-                        },
-                    }),
-                    range_length: Some(0),
-                    text: " ".to_string(),
-                },
-                TextDocumentContentChangeEvent {
-                    range: Some(Range {
-                        start: Position {
-                            line: 12,
-                            character: 0,
-                        },
-                        end: Position {
-                            line: 12,
-                            character: 9,
-                        },
-                    }),
-                    range_length: Some(9),
-                    text: "( text1 );".to_string(),
-                },
-            ],
-        );
+    fn update_vue_extends_relation() {
+        let mut renderer = create_renderer();
+        let extends_uri = renderer.render_cache.get_extends_uri(&TEST1_COMPONENT1);
+        let expected_uri: Option<&Uri> = Some(&TEST1_COMPONENT2);
+        assert_eq!(extends_uri, expected_uri);
+        // 删除导入 MyComponent2
+        let params = create_params(&TEST1_COMPONENT1, &[(5, 0, 5, 45, Some(45), "")]);
+        let expected = create_changes(&[(5, 0, 5, 45, Some(45), "")]);
+        let result = renderer.update(&TEST1_COMPONENT1, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let extends_uri = renderer.render_cache.get_extends_uri(&TEST1_COMPONENT1);
+        assert_eq!(extends_uri, None);
+        // 添加导入 MyComponent3
+        let text = "import MyComponent3 from './MyComponent3.vue';";
+        let params = create_params(&TEST1_COMPONENT1, &[(5, 0, 5, 0, Some(0), text)]);
+        let expected = create_changes(&[(5, 0, 5, 0, Some(0), text)]);
+        let result = renderer.update(&TEST1_COMPONENT1, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let extends_uri = renderer.render_cache.get_extends_uri(&TEST1_COMPONENT1);
+        assert_eq!(extends_uri, None);
+        // extends MyComponent2 改为 MyComponent3
+        let params = create_params(&TEST1_COMPONENT1, &[(7, 53, 7, 54, Some(1), "3")]);
+        let expected = create_changes(&[(7, 53, 7, 54, Some(1), "3")]);
+        let result = renderer.update(&TEST1_COMPONENT1, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let extends_uri = renderer.render_cache.get_extends_uri(&TEST1_COMPONENT1);
+        let expected_uri: Option<&Uri> = Some(&TEST1_COMPONENT3);
+        assert_eq!(extends_uri, expected_uri);
     }
 }

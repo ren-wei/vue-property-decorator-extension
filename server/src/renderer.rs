@@ -292,9 +292,11 @@ impl Renderer {
     /// * 不在 node_modules 中
     pub fn is_uri_valid(uri: &Uri) -> bool {
         let file_path = util::to_file_path(uri);
-        file_path.exists()
-            && file_path.is_file()
-            && !file_path.to_string_lossy().contains("/node_modules/")
+        if cfg!(not(test)) {
+            file_path.is_file() && !file_path.to_string_lossy().contains("/node_modules/")
+        } else {
+            !file_path.to_string_lossy().contains("/node_modules/")
+        }
     }
 
     /// uri 是否指向 node_modules 下的库
@@ -302,9 +304,11 @@ impl Renderer {
     /// * 存在于文件系统中
     pub fn is_node_modules(uri: &Uri) -> bool {
         let file_path = util::to_file_path(uri);
-        file_path.exists()
-            && file_path.is_dir()
-            && file_path.to_string_lossy().contains("/node_modules/")
+        if cfg!(not(test)) {
+            file_path.is_dir() && file_path.to_string_lossy().contains("/node_modules/")
+        } else {
+            file_path.to_string_lossy().contains("/node_modules/")
+        }
     }
 
     pub fn is_position_valid_by_document(
