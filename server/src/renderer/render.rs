@@ -616,6 +616,14 @@ mod tests {
             Uri::from_str("file:///path/project/src/test1/components/MyComponent2.vue").unwrap();
         static ref TEST1_COMPONENT3: Uri =
             Uri::from_str("file:///path/project/src/test1/components/MyComponent3.vue").unwrap();
+        static ref TEST2_INDEX: Uri =
+            Uri::from_str("file:///path/project/src/test2/index.vue").unwrap();
+        static ref TEST2_TS: Uri =
+            Uri::from_str("file:///path/project/src/test2/ts/transfer.ts").unwrap();
+        static ref TEST2_COMPONENT4: Uri =
+            Uri::from_str("file:///path/project/src/test2/components/MyComponent4.vue").unwrap();
+        static ref TEST2_COMPONENT5: Uri =
+            Uri::from_str("file:///path/project/src/test2/components/MyComponent5.vue").unwrap();
     }
 
     fn create_renderer() -> Renderer {
@@ -658,7 +666,7 @@ mod tests {
                 .to_string(),
             ),
         );
-        // test1/MyComponent1.vue
+        // test1/components/MyComponent1.vue
         renderer.create_node_from_document(
             &TEST1_COMPONENT1,
             FullTextDocument::new(
@@ -683,7 +691,7 @@ mod tests {
                 .to_string(),
             ),
         );
-        // test1/MyComponent2.vue
+        // test1/components/MyComponent2.vue
         renderer.create_node_from_document(
             &TEST1_COMPONENT2,
             FullTextDocument::new(
@@ -708,7 +716,7 @@ mod tests {
                 .to_string(),
             ),
         );
-        // test1/MyComponent3.vue
+        // test1/components/MyComponent3.vue
         renderer.create_node_from_document(
             &TEST1_COMPONENT3,
             FullTextDocument::new(
@@ -722,7 +730,98 @@ mod tests {
                     "import Vue from 'vue';",
                     "import { Component } from 'vue-property-decorator';",
                     "@Component",
-                    "export default class MyComponent2 extends Vue {",
+                    "export default class MyComponent3 extends Vue {",
+                    "  @Prop({ type: Boolean, default: false })",
+                    "  private disabled!: boolean;",
+                    "  private show = false;",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        // test2/index.vue
+        renderer.create_node_from_document(
+            &TEST2_INDEX,
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <MyComponent4 title=\"Title\" />",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "import MyComponent4 from './ts/transfer.ts';",
+                    "@Component({",
+                    "  components: {",
+                    "    MyComponent4,",
+                    "  },",
+                    "})",
+                    "export default class Index extends Vue {",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        // test2/ts/transfer.ts
+        renderer.create_node_from_document(
+            &TEST2_TS,
+            FullTextDocument::new(
+                "typescript".to_string(),
+                0,
+                [
+                    "import MyComponent4 from '../components/MyComponent4.vue';",
+                    "export default MyComponent4;",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        // test2/components/MyComponent4.vue
+        renderer.create_node_from_document(
+            &TEST2_COMPONENT4,
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <div></div>",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "@Component",
+                    "export default class MyComponent4 extends Vue {",
+                    "  @Prop({ type: Boolean, default: false })",
+                    "  private disabled!: boolean;",
+                    "  private show = false;",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        // test2/components/MyComponent5.vue
+        renderer.create_node_from_document(
+            &TEST2_COMPONENT5,
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <div></div>",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "@Component",
+                    "export default class MyComponent5 extends Vue {",
                     "  @Prop({ type: Boolean, default: false })",
                     "  private disabled!: boolean;",
                     "  private show = false;",
@@ -861,5 +960,108 @@ mod tests {
             registers,
             vec![("MyComponent2".to_string(), None, None, expected_uri,)]
         );
+    }
+
+    #[test]
+    fn update_ts_transfers() {
+        let mut renderer = create_renderer();
+        let transfer_result = renderer.render_cache.get_transfer_node(&TEST2_TS, &None);
+        let expected: Option<(&Uri, Option<_>)> = Some((&TEST2_COMPONENT4, None));
+        assert_eq!(transfer_result, expected);
+        // ../components/MyComponent4.vue 改为 ../components/MyComponent5.vue
+        let params = create_params(&TEST2_TS, &[(0, 51, 0, 52, Some(1), "5")]);
+        let expected = create_changes(&[(0, 51, 0, 52, Some(1), "5")]);
+        let result = renderer.update(&TEST2_TS, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let transfer_result = renderer.render_cache.get_transfer_node(&TEST2_TS, &None);
+        let expected: Option<(&Uri, Option<_>)> = Some((&TEST2_COMPONENT5, None));
+        assert_eq!(transfer_result, expected);
+    }
+
+    #[test]
+    fn update_full() {
+        let mut renderer = create_renderer();
+        let params = create_params(&TEST1_INDEX, &[(3, 7, 3, 7, Some(0), "1")]);
+        let expected = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: TEST1_INDEX.clone(),
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: "".to_string(),
+            }],
+        };
+        let result = renderer.update(
+            &TEST1_INDEX,
+            params,
+            &FullTextDocument::new(
+                "vue".to_string(),
+                1,
+                [
+                    "<template>",
+                    "  <MyComponent1 title=\"Title\" />",
+                    "</template>",
+                    "<script1 lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "import MyComponent1 from './components/MyComponent1.vue';",
+                    "@Component({",
+                    "  components: {",
+                    "    MyComponent1,",
+                    "  },",
+                    "})",
+                    "export default class Index extends Vue {",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n"),
+            ),
+        );
+        assert_eq!(result, expected);
+
+        let params = create_params(&TEST1_INDEX, &[(3, 7, 3, 8, Some(1), "")]);
+        let result = renderer.update(
+            &TEST1_INDEX,
+            params,
+            &FullTextDocument::new(
+                "vue".to_string(),
+                1,
+                [
+                    "<template>",
+                    "  <MyComponent1 title=\"Title\" />",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "import MyComponent1 from './components/MyComponent1.vue';",
+                    "@Component({",
+                    "  components: {",
+                    "    MyComponent1,",
+                    "  },",
+                    "})",
+                    "export default class Index extends Vue {",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n"),
+            ),
+        );
+        let expected = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: TEST1_INDEX.clone(),
+                version: 1,
+            },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: renderer
+                    .render_cache
+                    .get_node_render_content(&TEST1_INDEX)
+                    .unwrap(),
+            }],
+        };
+        assert_eq!(result, expected);
     }
 }
