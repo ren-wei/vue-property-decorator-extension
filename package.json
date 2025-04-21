@@ -150,6 +150,7 @@
     "lint": "eslint ./client/src --ext .ts,.tsx",
     "postinstall": "cd client && npm install && cd ..",
     "test": "cd server && cargo test && cd ..",
+    "test-c": "cd server && cargo tarpaulin -o html && cd ..",
     "prebuild": "npm run test",
     "build": "cd server && cargo build --release && cargo build --release --target x86_64-pc-windows-gnu && cargo build --release --target x86_64-unknown-linux-musl && cd .. && npx vsce package"
   },
