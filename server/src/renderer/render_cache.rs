@@ -374,7 +374,7 @@ impl RenderCacheGraph {
 /// register
 impl RenderCacheGraph {
     /// 获取注册的名称及注册组件的节点数据
-    /// 返回值：(registered_name, export_name, prop, cache)
+    /// 返回值：(registered_name, export_name, prop, uri)
     pub fn get_registers(&self, uri: &Uri) -> Vec<(String, Option<String>, Option<String>, &Uri)> {
         let node = self.idx_map[uri];
         let edges = self

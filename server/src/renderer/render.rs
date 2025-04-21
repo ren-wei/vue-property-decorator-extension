@@ -639,15 +639,15 @@ mod tests {
                 0,
                 [
                     "<template>",
-                    "  <MyComponent title=\"Title\" />",
+                    "  <MyComponent1 title=\"Title\" />",
                     "</template>",
                     "<script lang=\"ts\">",
                     "import Vue from 'vue';",
                     "import { Component } from 'vue-property-decorator';",
-                    "import MyComponent from './components/MyComponent1.vue';",
+                    "import MyComponent1 from './components/MyComponent1.vue';",
                     "@Component({",
                     "  components: {",
-                    "    MyComponent,",
+                    "    MyComponent1,",
                     "  },",
                     "})",
                     "export default class Index extends Vue {",
@@ -827,5 +827,39 @@ mod tests {
         let extends_uri = renderer.render_cache.get_extends_uri(&TEST1_COMPONENT1);
         let expected_uri: Option<&Uri> = Some(&TEST1_COMPONENT3);
         assert_eq!(extends_uri, expected_uri);
+    }
+
+    #[test]
+    fn update_vue_registers_relation() {
+        let mut renderer = create_renderer();
+        // 将 ./components/MyComponent1.vue 替换为 ./components/MyComponent2.vue
+        let params = create_params(&TEST1_INDEX, &[(6, 50, 6, 51, Some(1), "2")]);
+        let expected = create_changes(&[(6, 50, 6, 51, Some(1), "2")]);
+        let result = renderer.update(&TEST1_INDEX, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let registers = renderer.render_cache.get_registers(&TEST1_INDEX);
+        let expected_uri: &Uri = &TEST1_COMPONENT2;
+        assert_eq!(
+            registers,
+            vec![("MyComponent1".to_string(), None, None, expected_uri,)]
+        );
+        // 将 import MyComponent1 改为 import MyComponent2
+        let params = create_params(&TEST1_INDEX, &[(6, 18, 6, 19, Some(1), "2")]);
+        let expected = create_changes(&[(6, 18, 6, 19, Some(1), "2")]);
+        let result = renderer.update(&TEST1_INDEX, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let registers = renderer.render_cache.get_registers(&TEST1_INDEX);
+        assert_eq!(registers, vec![]);
+        // 将 components 内的 MyComponent1 改为 MyComponent2
+        let params = create_params(&TEST1_INDEX, &[(9, 15, 9, 16, Some(1), "2")]);
+        let expected = create_changes(&[(9, 15, 9, 16, Some(1), "2")]);
+        let result = renderer.update(&TEST1_INDEX, params, &create_empty_document());
+        assert_eq!(result.content_changes, expected);
+        let registers = renderer.render_cache.get_registers(&TEST1_INDEX);
+        let expected_uri: &Uri = &TEST1_COMPONENT2;
+        assert_eq!(
+            registers,
+            vec![("MyComponent2".to_string(), None, None, expected_uri,)]
+        );
     }
 }
