@@ -152,7 +152,7 @@ pub struct RegisterComponent {
     pub path: String,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ParseScriptResult {
     pub name_span: Span,
     pub description: Option<Description>,

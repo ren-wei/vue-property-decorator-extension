@@ -414,6 +414,7 @@ pub fn parse_vue_file(document: &FullTextDocument) -> ParseVueFileResult {
     }
 }
 
+#[derive(Debug)]
 pub struct ParseVueFileResult {
     pub template: Option<Node>,
     pub script: Option<Node>,

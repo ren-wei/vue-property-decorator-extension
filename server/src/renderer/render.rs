@@ -16,7 +16,7 @@ use tower_lsp::{
 };
 #[cfg(target_os = "windows")]
 use tower_lsp::{NotCancellable, OngoingProgress, Unbounded};
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 use walkdir::WalkDir;
 
 use crate::util;
@@ -126,7 +126,7 @@ impl Renderer {
     /// * 更新继承关系
     /// * 更新注册关系
     /// * 更新继承自当前文件的文件
-    pub async fn update(
+    pub fn update(
         &mut self,
         uri: &Uri,
         params: DidChangeTextDocumentParams,
@@ -135,10 +135,9 @@ impl Renderer {
         let mut content_changes = vec![];
         for change in &params.content_changes {
             let cache = self.render_cache.get_mut(uri).unwrap();
-            let result = cache.update(change.clone(), document);
+            let result = cache.update(change.clone());
             if let Some(mut result) = result {
                 // 更新影响的组件的版本
-                debug!("is_change: {}", result.is_change);
                 if result.is_change {
                     self.render_cache.update_incoming_node_version(uri);
                 }
@@ -172,8 +171,7 @@ impl Renderer {
                             .unwrap_or(document.version()),
                         document.get_content(None).to_string(),
                     ),
-                )
-                .await;
+                );
                 self.render_cache.flush();
                 if let Some(content) = self.render_cache.get_node_render_content(uri) {
                     return DidChangeTextDocumentParams {
@@ -393,25 +391,25 @@ impl Renderer {
     async fn create_node(&mut self, uri: &Uri) {
         let document = Renderer::get_document_from_file(uri).await.unwrap();
         if Renderer::is_vue_component(uri) {
-            self.create_vue_node(uri, document).await;
+            self.create_vue_node(uri, document);
         } else {
-            self.create_ts_node(uri, document).await;
+            self.create_ts_node(uri, document);
         }
     }
 
     /// 创建节点及相关的边
-    async fn create_node_from_document(&mut self, uri: &Uri, document: FullTextDocument) {
+    fn create_node_from_document(&mut self, uri: &Uri, document: FullTextDocument) {
         if Renderer::is_vue_component(uri) {
-            self.create_vue_node(uri, document).await;
+            self.create_vue_node(uri, document);
         } else {
-            self.create_ts_node(uri, document).await;
+            self.create_ts_node(uri, document);
         }
     }
 
     /// 创建 vue 节点
     /// * 如果存在继承关系，那么创建继承边
     /// * 如果存在注册关系，那么创建注册边
-    async fn create_vue_node(&mut self, uri: &Uri, document: FullTextDocument) {
+    fn create_vue_node(&mut self, uri: &Uri, document: FullTextDocument) {
         let result = vue_render_cache::parse_vue_file(&document);
         self.render_cache.add_node(
             uri,
@@ -441,7 +439,7 @@ impl Renderer {
     /// * 如果存在组件并且存在继承关系，那么创建继承边
     /// * 如果存在组件并且存在注册关系，那么创建注册边
     /// * 创建节点间中转关系
-    async fn create_ts_node(&mut self, uri: &Uri, document: FullTextDocument) {
+    fn create_ts_node(&mut self, uri: &Uri, document: FullTextDocument) {
         let result = ts_render_cache::parse_ts_file(&document);
         let mut ts_component = None;
         if let Some((name_range, description, props, extends_component, registers)) =
@@ -545,6 +543,7 @@ impl Renderer {
     }
 
     /// 从导入路径获取 uri，如果对应的文件不存在，返回 None
+    #[cfg(not(test))]
     fn get_uri_from_path(&self, base_uri: &Uri, path: &str) -> Option<Uri> {
         let file_path = parse_import_path::parse_import_path(
             base_uri,
@@ -576,5 +575,225 @@ impl Renderer {
         } else {
             Some(util::create_uri_from_path(&file_path))
         }
+    }
+
+    #[cfg(test)]
+    /// 从导入路径获取 uri，如果对应的文件不存在，返回 None
+    fn get_uri_from_path(&self, base_uri: &Uri, path: &str) -> Option<Uri> {
+        let file_path = parse_import_path::parse_import_path(
+            base_uri,
+            path,
+            &self.alias,
+            &self.root_uri_target_uri.as_ref().unwrap().0,
+        );
+        Some(util::create_uri_from_path(&file_path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    };
+
+    use lsp_textdocument::FullTextDocument;
+    use tower_lsp::lsp_types::{
+        DidChangeTextDocumentParams, Position, Range, TextDocumentContentChangeEvent, Uri,
+        VersionedTextDocumentIdentifier,
+    };
+
+    use crate::renderer::{render_cache::RenderCacheGraph, Renderer};
+
+    const TEST1_INDEX: &str = "file:///path/project/src/test1/index.vue";
+    const TEST1_COMPONENT1: &str = "file:///path/project/src/test1/components/MyComponent1.vue";
+    const TEST1_COMPONENT2: &str = "file:///path/project/src/test1/components/MyComponent2.vue";
+
+    fn create_renderer() -> Renderer {
+        let cache_graph = RenderCacheGraph::new();
+        let mut renderer = Renderer {
+            root_uri_target_uri: Some((
+                Uri::from_str("file:///path/project").unwrap(),
+                Uri::from_str("file:///path/.~$project").unwrap(),
+            )),
+            alias: HashMap::new(),
+            render_cache: cache_graph,
+            provider_map: HashMap::new(),
+            library_list: vec![],
+            will_create_files: HashSet::new(),
+        };
+        // test1/index.vue
+        renderer.create_node_from_document(
+            &Uri::from_str(&TEST1_INDEX).unwrap(),
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <MyComponent title=\"Title\" />",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "import MyComponent from './components/MyComponent1.vue';",
+                    "@Component({",
+                    "  components: {",
+                    "    MyComponent,",
+                    "  },",
+                    "})",
+                    "export default class Index extends Vue {",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        // test1/MyComponent1.vue
+        renderer.create_node_from_document(
+            &Uri::from_str(&TEST1_COMPONENT1).unwrap(),
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <div>{{ text }}</div>",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import { Component } from 'vue-property-decorator';",
+                    "import MyComponent2 from './MyComponent2';",
+                    "@Component",
+                    "export default class MyComponent1 extends MyComponent2 {",
+                    "  @Prop({ type: String, required: true })",
+                    "  private title!: string;",
+                    "  private text = 'Hello World';",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+        // test1/MyComponent2.vue
+        renderer.create_node_from_document(
+            &Uri::from_str(&TEST1_COMPONENT2).unwrap(),
+            FullTextDocument::new(
+                "vue".to_string(),
+                0,
+                [
+                    "<template>",
+                    "  <div></div>",
+                    "</template>",
+                    "<script lang=\"ts\">",
+                    "import Vue from 'vue';",
+                    "import { Component } from 'vue-property-decorator';",
+                    "@Component",
+                    "export default class MyComponent2 extends Vue {",
+                    "  @Prop({ type: Boolean, default: false })",
+                    "  private readonly!: boolean;",
+                    "  private state = 'init';",
+                    "}",
+                    "</script>",
+                ]
+                .join("\n")
+                .to_string(),
+            ),
+        );
+
+        renderer
+    }
+
+    fn create_empty_document() -> FullTextDocument {
+        FullTextDocument::new("vue".to_string(), 0, "".to_string())
+    }
+
+    fn assert_update1_no_effect(
+        changes: Vec<TextDocumentContentChangeEvent>,
+        expected: Vec<TextDocumentContentChangeEvent>,
+    ) {
+        let mut renderer = create_renderer();
+        let params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: Uri::from_str(TEST1_COMPONENT1).unwrap(),
+                version: 1,
+            },
+            content_changes: changes,
+        };
+        let result = renderer
+            .update(
+                &Uri::from_str(TEST1_COMPONENT1).unwrap(),
+                params,
+                &create_empty_document(),
+            )
+            .content_changes;
+        assert_eq!(result, expected);
+        // 上游节点应该未更新
+        assert_eq!(
+            renderer
+                .render_cache
+                .get(&Uri::from_str(TEST1_INDEX).unwrap())
+                .unwrap()
+                .get_version(),
+            Some(0)
+        );
+        // 其他组件应该未更新
+        assert_eq!(
+            renderer
+                .render_cache
+                .get(&Uri::from_str(TEST1_COMPONENT2).unwrap())
+                .unwrap()
+                .get_version(),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn update_vue_template() {
+        assert_update1_no_effect(
+            vec![TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: 1,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 14,
+                    },
+                }),
+                range_length: Some(0),
+                text: "1".to_string(),
+            }],
+            vec![
+                TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position {
+                            line: 1,
+                            character: 14,
+                        },
+                        end: Position {
+                            line: 1,
+                            character: 14,
+                        },
+                    }),
+                    range_length: Some(0),
+                    text: " ".to_string(),
+                },
+                TextDocumentContentChangeEvent {
+                    range: Some(Range {
+                        start: Position {
+                            line: 12,
+                            character: 0,
+                        },
+                        end: Position {
+                            line: 12,
+                            character: 9,
+                        },
+                    }),
+                    range_length: Some(9),
+                    text: "( text1 );".to_string(),
+                },
+            ],
+        );
     }
 }

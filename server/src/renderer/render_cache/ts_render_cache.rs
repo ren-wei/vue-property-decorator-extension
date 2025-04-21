@@ -36,9 +36,10 @@ impl TsRenderCache {
     pub fn update(
         &mut self,
         change: TextDocumentContentChangeEvent,
-        document: &FullTextDocument,
     ) -> Option<RenderCacheUpdateResult> {
-        let result = parse_ts_file(document);
+        self.document
+            .update(&[change.clone()], self.document.version() + 1);
+        let result = parse_ts_file(&self.document);
         self.local_exports = result.local_exports;
         if let Some(ts_component) = result.ts_component {
             self.ts_component = Some(TsComponent {

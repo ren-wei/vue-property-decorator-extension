@@ -6,7 +6,6 @@ use std::{collections::HashMap, ops::Index};
 
 use html_languageservice::html_data::Description;
 use lib_render_cache::LibRenderCache;
-use lsp_textdocument::FullTextDocument;
 use petgraph::{graph::NodeIndex, visit::EdgeRef, Direction, Graph};
 use swc_common::util::take::Take;
 use tokio::fs;
@@ -432,11 +431,10 @@ impl RenderCache {
     pub fn update(
         &mut self,
         change: TextDocumentContentChangeEvent,
-        document: &FullTextDocument,
     ) -> Option<RenderCacheUpdateResult> {
         match self {
             RenderCache::VueRenderCache(vue_cache) => vue_cache.update(change),
-            RenderCache::TsRenderCache(ts_cache) => ts_cache.update(change, document),
+            RenderCache::TsRenderCache(ts_cache) => ts_cache.update(change),
             RenderCache::LibRenderCache(lib_cache) => {
                 error!("lib update: {} {:?}", lib_cache.name, change);
                 Some(RenderCacheUpdateResult {
@@ -471,6 +469,7 @@ impl RenderCache {
 /// * 继承关系是否改变（是否需要更新继承关系）
 /// * 注册关系是否改变（是否需要更新注册关系）
 /// * 转换关系是否改变（是否需要更新转换关系）
+#[derive(Debug, Default)]
 pub struct RenderCacheUpdateResult {
     /// 渲染内容的变更
     pub changes: Vec<TextDocumentContentChangeEvent>,

@@ -164,7 +164,7 @@ impl TsServer {
     ) {
         let uri = params.text_document.uri.clone();
         let mut renderer = self.renderer.lock().await;
-        let params = renderer.update(&uri, params, document).await;
+        let params = renderer.update(&uri, params, document);
         let options = &ConvertOptions {
             renderer: Some(&renderer),
             ..Default::default()
