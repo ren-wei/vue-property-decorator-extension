@@ -228,6 +228,10 @@ impl TemplateCompileResult {
     }
 
     fn add_fragment(&mut self, target: &str, mut original: usize) {
+        if target.len() == 0 {
+            self.mapping.push((self.offset, original, 0));
+            return;
+        }
         // 按 $ 分隔，并在随后的步骤中加上 `this.` 前缀
         let mut split = target.split("$");
         // 第一个必定存在，并且不需要加 `this.` 前缀
@@ -294,6 +298,11 @@ mod tests {
             r#"<template><ProjectHeader :title="title" :job="job" /></template>"#,
             &["(title);", "(job);"].join(""),
             &[(1, 33, 5), (9, 46, 3)],
+        );
+        assert_render(
+            r#"<template><ProjectHeader :title="title" :job="" /></template>"#,
+            &["(title);", "();"].join(""),
+            &[(1, 33, 5), (9, 46, 0)],
         );
     }
 

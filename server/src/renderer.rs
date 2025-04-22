@@ -400,6 +400,8 @@ mod tests {
     use crate::renderer::{render_cache::RenderCacheGraph, Renderer};
     use lazy_static::lazy_static;
 
+    use super::PositionType;
+
     lazy_static! {
         static ref TEST1_INDEX: Uri =
             Uri::from_str("file:///path/project/src/test1/index.vue").unwrap();
@@ -467,7 +469,7 @@ mod tests {
                 0,
                 [
                     "<template>",
-                    "  <div>{{ text }}</div>",
+                    "  <div :title=\"title\" :tabIndex=\"\">{{ text }}</div>",
                     "</template>",
                     "<script lang=\"ts\">",
                     "import { Component } from 'vue-property-decorator';",
@@ -669,6 +671,78 @@ mod tests {
         }
     }
 
+    fn assert_mapping(pos: (u32, u32), expected: Option<(u32, u32)>) {
+        let renderer = create_renderer();
+        let result = renderer.get_mapping_position(
+            &TEST1_COMPONENT1,
+            &Position {
+                line: pos.0,
+                character: pos.1,
+            },
+        );
+        let expected = expected.map(|v| Position {
+            line: v.0,
+            character: v.1,
+        });
+        assert_eq!(result, expected);
+    }
+
+    fn assert_original(pos: (u32, u32), expected: Option<(u32, u32)>) {
+        let renderer = create_renderer();
+        let result = renderer.get_original_position(
+            &TEST1_COMPONENT1,
+            &Position {
+                line: pos.0,
+                character: pos.1,
+            },
+        );
+        let expected = expected.map(|v| Position {
+            line: v.0,
+            character: v.1,
+        });
+        assert_eq!(result, expected);
+    }
+
+    fn assert_original_range(range: (u32, u32, u32, u32), expected: Option<(u32, u32, u32, u32)>) {
+        let renderer = create_renderer();
+        let result = renderer.get_original_range(
+            &TEST1_COMPONENT1,
+            &Range {
+                start: Position {
+                    line: range.0,
+                    character: range.1,
+                },
+                end: Position {
+                    line: range.2,
+                    character: range.3,
+                },
+            },
+        );
+        let expected = expected.map(|v| Range {
+            start: Position {
+                line: v.0,
+                character: v.1,
+            },
+            end: Position {
+                line: v.2,
+                character: v.3,
+            },
+        });
+        assert_eq!(result, expected);
+    }
+
+    fn assert_position_type(pos: (u32, u32), expected: Option<PositionType>) {
+        let renderer = create_renderer();
+        let result = renderer.get_position_type(
+            &TEST1_COMPONENT1,
+            &Position {
+                line: pos.0,
+                character: pos.1,
+            },
+        );
+        assert_eq!(result, expected);
+    }
+
     #[test]
     fn update_vue_script_props() {
         let mut renderer = create_renderer();
@@ -856,5 +930,90 @@ mod tests {
             }],
         };
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn mapping() {
+        assert_mapping((1, 14), None);
+        assert_mapping((1, 15), Some((12, 1)));
+        assert_mapping((1, 19), Some((12, 5)));
+        assert_mapping((1, 20), Some((12, 6)));
+        assert_mapping((1, 32), None);
+        assert_mapping((1, 33), Some((12, 9)));
+        assert_mapping((1, 34), None);
+        assert_mapping((1, 36), None);
+        assert_mapping((1, 37), Some((12, 12)));
+        assert_mapping((1, 42), Some((12, 17)));
+        assert_mapping((1, 43), Some((12, 18)));
+        assert_mapping((1, 44), None);
+    }
+
+    #[test]
+    fn mapping_ts() {
+        let renderer = create_renderer();
+        let result = renderer.get_mapping_position(
+            &TEST2_TS,
+            &Position {
+                line: 0,
+                character: 0,
+            },
+        );
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn original() {
+        assert_original((12, 0), None);
+        assert_original((12, 1), Some((1, 15)));
+        assert_original((12, 5), Some((1, 19)));
+        assert_original((12, 6), Some((1, 20)));
+        assert_original((12, 7), None);
+        assert_original((12, 8), None);
+        assert_original((12, 9), Some((1, 33)));
+        assert_original((12, 10), None);
+        assert_original((12, 11), None);
+        assert_original((12, 12), Some((1, 37)));
+        assert_original((12, 17), Some((1, 42)));
+        assert_original((12, 18), Some((1, 43)));
+        assert_original((12, 19), None);
+        assert_original((11, 0), None);
+    }
+
+    #[test]
+    fn original_ts() {
+        let renderer = create_renderer();
+        let result = renderer.get_original_position(
+            &TEST2_TS,
+            &Position {
+                line: 0,
+                character: 0,
+            },
+        );
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn original_range() {
+        assert_original_range((12, 1, 12, 6), Some((1, 15, 1, 20)));
+        assert_original_range((12, 1, 12, 7), None);
+        assert_original_range((12, 0, 12, 6), None);
+        assert_original_range((12, 9, 12, 9), Some((1, 33, 1, 33)));
+    }
+
+    #[test]
+    fn position_type() {
+        assert_position_type((0, 0), None);
+        assert_position_type((1, 3), Some(PositionType::Template));
+        assert_position_type((1, 14), Some(PositionType::Template));
+        assert_position_type(
+            (1, 15),
+            Some(PositionType::TemplateExpr(Position {
+                line: 12,
+                character: 1,
+            })),
+        );
+        assert_position_type((3, 0), None);
+        assert_position_type((4, 0), Some(PositionType::Script));
+        assert_position_type((12, 0), None);
     }
 }
