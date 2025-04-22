@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use lsp_textdocument::FullTextDocument;
+#[cfg(target_os = "windows")]
+use tokio::process::Command;
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
@@ -33,6 +35,9 @@ use super::{
     Renderer,
 };
 
+#[cfg(target_os = "windows")]
+const GIT_HEAD_FILE_NAME: &str = ".vue-property-decorator-extension-git-head";
+
 impl Renderer {
     /// 创建渲染目录，并进行渲染
     pub async fn init(&mut self, root_uri: &Uri, client: &Client, work_done_token: ProgressToken) {
@@ -46,9 +51,40 @@ impl Renderer {
         target_root_path.pop();
         let project_name = src_path.file_name().unwrap().to_str().unwrap();
         target_root_path.push(format!(".~${}", project_name));
+        // 是否跳过删除和重新复制 node_modules
+        #[cfg(target_os = "windows")]
+        let mut skip = false;
+        #[cfg(target_os = "windows")]
+        let mut cur_head = None;
         if target_root_path.exists() {
+            #[cfg(target_os = "windows")]
+            {
+                // 获取上次启动时的 git hash
+                let mut config_path = target_root_path.clone();
+                config_path.push(GIT_HEAD_FILE_NAME);
+                if let Ok(output) = Command::new("git")
+                    .arg("rev-parse")
+                    .arg("HEAD")
+                    .output()
+                    .await
+                {
+                    cur_head = Some(String::from_utf8_lossy(&output.stdout).to_string());
+                    if let Ok(head) = fs::read_to_string(config_path).await {
+                        skip = cur_head == Some(head);
+                    }
+                }
+                if !skip {
+                    fs::remove_dir_all(&target_root_path).await.unwrap();
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
             fs::remove_dir_all(&target_root_path).await.unwrap();
         }
+        #[cfg(target_os = "windows")]
+        if !skip {
+            fs::create_dir_all(&target_root_path).await.unwrap();
+        }
+        #[cfg(not(target_os = "windows"))]
         fs::create_dir_all(&target_root_path).await.unwrap();
 
         self.init_tsconfig_paths(root_uri).await;
@@ -68,7 +104,7 @@ impl Renderer {
                 .await
                 .unwrap();
             #[cfg(target_os = "windows")]
-            {
+            if !skip {
                 async fn copy_dir(
                     src: &PathBuf,
                     dst: &PathBuf,
@@ -116,6 +152,12 @@ impl Renderer {
                 copy_dir(&node_modules_src_path, &node_modules_target_path, &progress)
                     .await
                     .unwrap();
+                // 写入 cur_head
+                if let Some(head) = cur_head {
+                    let mut config_path = target_root_path.clone();
+                    config_path.push(GIT_HEAD_FILE_NAME);
+                    fs::write(config_path, head).await.unwrap();
+                }
             }
         }
         progress.finish().await;
@@ -366,6 +408,9 @@ impl Renderer {
                         self.create_node(&uri).await;
                     } else {
                         // 如果不是 vue 文件，创建硬链接
+                        if target_path.exists() {
+                            fs::remove_file(&target_path).await.unwrap();
+                        }
                         fs::hard_link(src_path, target_path).await.unwrap();
 
                         if src_path.extension().is_some_and(|v| v == "ts") {
