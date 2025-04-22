@@ -433,6 +433,7 @@ impl Index<&Uri> for RenderCacheGraph {
     }
 }
 
+#[derive(Debug)]
 pub enum RenderCache {
     VueRenderCache(VueRenderCache),
     TsRenderCache(TsRenderCache),
@@ -473,6 +474,15 @@ impl RenderCache {
     pub fn update_version(&mut self, version: i32) {
         if let RenderCache::VueRenderCache(cache) = self {
             cache.document.update(&[], version);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn is_lib(&self) -> bool {
+        if let RenderCache::LibRenderCache(_) = self {
+            true
+        } else {
+            false
         }
     }
 }

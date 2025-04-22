@@ -1,14 +1,15 @@
 use html_languageservice::html_data::Description;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 use tower_lsp::lsp_types::Location;
 
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
-use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem, Stmt};
+use swc_ecma_ast::{ClassMember, Decl, Expr, ModuleDecl, ModuleItem};
 use tower_lsp::lsp_types::{Range, Uri};
 
 use crate::{ast, util};
 
+#[derive(Debug)]
 pub struct LibRenderCache {
     pub name: String,
     pub components: Vec<LibComponent>,
@@ -29,72 +30,6 @@ pub struct LibComponent {
 pub struct LibComponentProp {
     pub name: String,
     pub location: Location,
-}
-
-/// 解析组件库
-/// 从 types/index.d.ts 文件中解析组件库
-/// 如果遇到导入语句，那么先进入导入语句的文件
-/// 将中间结果保存到上下文
-/// 获取继承自 Vue 的组件
-pub async fn _parse_lib(uri: &Uri) -> Vec<LibComponent> {
-    // 尝试解析 uri 下 types/index.d.ts 文件
-    // 如果遇到 export * from './xxx'，那么递归解析
-    // 获取继承自 Vue 的组件的 ClassExpr
-    let components = vec![];
-    let mut file_path = util::to_file_path(uri);
-    file_path.push("types/index.d.ts");
-    if file_path.is_file() {
-        let _idx_map = _parse_file(file_path);
-    }
-    components
-}
-
-/// 递归解析路径指向的文件获取当前文件导出的所有定义
-fn _parse_file(path: PathBuf) -> HashMap<Option<String>, Decl> {
-    // 获取文件内容
-    let mut idx_map = HashMap::new();
-    let mut local_idx_map = HashMap::new();
-    let source = fs::read_to_string(path).unwrap();
-    let module = ast::parse_source(&source, 0, source.len()).0.unwrap();
-    for item in module.body {
-        match item {
-            ModuleItem::ModuleDecl(module) => match module {
-                ModuleDecl::Import(_import_decl) => {
-                    // TODO: 导入声明需要再从对应文件获取导出
-                }
-                ModuleDecl::ExportDecl(export_decl) => {
-                    idx_map.insert(
-                        Some(ast::get_ident_from_export_decl(&export_decl)),
-                        export_decl.decl,
-                    );
-                }
-                ModuleDecl::ExportNamed(_named_export) => {
-                    // TODO: 如果存在 src ，那么先从对应文件获取导出
-                }
-                ModuleDecl::ExportDefaultDecl(export_default_decl) => {
-                    idx_map.insert(
-                        None,
-                        ast::_convert_default_decl_to_decl(export_default_decl.decl),
-                    );
-                }
-                ModuleDecl::ExportDefaultExpr(_export_default_expr) => {
-                    // TODO: 导出默认表达式，如果是标识符，需要先从本地声明中获取
-                }
-                ModuleDecl::ExportAll(_export_all) => {
-                    // TODO: 从导入文件获取全部导出
-                }
-                ModuleDecl::TsImportEquals(_ts_import_equals_decl) => {}
-                ModuleDecl::TsExportAssignment(_ts_export_assignment) => {}
-                ModuleDecl::TsNamespaceExport(_ts_namespace_export_decl) => {}
-            },
-            ModuleItem::Stmt(stmt) => {
-                if let Stmt::Decl(decl) = stmt {
-                    local_idx_map.insert(ast::get_ident_from_decl(&decl), decl);
-                }
-            }
-        }
-    }
-    idx_map
 }
 
 /// 解析特定格式的 UI 库，作为临时的代替方案

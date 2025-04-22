@@ -17,6 +17,7 @@ use super::RenderCacheUpdateResult;
 use super::Renderer;
 
 /// ts 文件的渲染缓存
+#[derive(Debug)]
 pub struct TsRenderCache {
     /// ts 文件的文档
     pub document: FullTextDocument,
@@ -26,6 +27,7 @@ pub struct TsRenderCache {
     pub local_exports: Vec<Option<String>>,
 }
 
+#[derive(Debug)]
 pub struct TsComponent {
     pub name_range: Range,
     pub description: Option<Description>,

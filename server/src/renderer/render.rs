@@ -223,9 +223,11 @@ impl Renderer {
             None
         };
 
-        let (root_uri, target_root_uri) = self.root_uri_target_uri.as_ref().unwrap();
-        self.render_cache
-            .render_node(uri, root_uri, target_root_uri);
+        if !cfg!(test) {
+            let (root_uri, target_root_uri) = self.root_uri_target_uri.as_ref().unwrap();
+            self.render_cache
+                .render_node(uri, root_uri, target_root_uri);
+        }
 
         change
     }
@@ -379,7 +381,7 @@ impl Renderer {
         // 创建组件库节点
         let library_list = self.library_list.clone();
         for lib_node in &library_list {
-            self.create_lib_node(lib_node).await;
+            self.create_lib_node(lib_node);
         }
         self.render_cache.flush();
         self.render_cache.render(root_uri, target_root_uri);
@@ -465,7 +467,7 @@ impl Renderer {
         self.create_transfers_relation(uri, result.transfers);
     }
 
-    async fn create_lib_node(&mut self, uri: &Uri) {
+    fn create_lib_node(&mut self, uri: &Uri) {
         self.render_cache.add_node(
             uri,
             RenderCache::LibRenderCache(lib_render_cache::parse_specific_lib(uri)),
@@ -588,5 +590,78 @@ impl Renderer {
             &self.root_uri_target_uri.as_ref().unwrap().0,
         );
         Some(util::create_uri_from_path(&file_path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    };
+
+    use tower_lsp::lsp_types::{Location, Position, Range, Uri};
+
+    use crate::renderer::{
+        render_cache::{RenderCache, RenderCacheGraph},
+        Renderer,
+    };
+
+    #[test]
+    fn parse_lib() {
+        let exe_path = std::env::current_exe().unwrap();
+        let mut path = exe_path.parent().unwrap().to_path_buf();
+        while !path.file_name().is_some_and(|name| name == "server") {
+            path = path.parent().unwrap().to_path_buf();
+        }
+        path = path.parent().unwrap().to_path_buf();
+        let lib_uri = Uri::from_str(&format!(
+            "file://{}/node_modules/element-ui",
+            path.display()
+        ))
+        .unwrap();
+
+        let cache_graph = RenderCacheGraph::new();
+        let mut renderer = Renderer {
+            root_uri_target_uri: Some((
+                Uri::from_str("file:///path/project").unwrap(),
+                Uri::from_str("file:///path/.~$project").unwrap(),
+            )),
+            alias: HashMap::new(),
+            render_cache: cache_graph,
+            provider_map: HashMap::new(),
+            library_list: vec![],
+            will_create_files: HashSet::new(),
+        };
+        renderer.create_lib_node(&lib_uri);
+        let lib_cache = renderer.render_cache.get(&lib_uri).unwrap();
+        assert!(lib_cache.is_lib());
+        if let RenderCache::LibRenderCache(lib_cache) = lib_cache {
+            let alert = lib_cache.components.iter().find(|v| v.name == "ElAlert");
+            let alert = alert.unwrap();
+            assert!(alert.description.is_some());
+            assert!(alert.props.len() > 0);
+            let title = alert.props.iter().find(|v| v.name == "title").unwrap();
+            assert_eq!(
+                title.location,
+                Location {
+                    uri: Uri::from_str(&format!(
+                        "file://{}/node_modules/element-ui/types/alert.d.ts",
+                        path.display()
+                    ))
+                    .unwrap(),
+                    range: Range {
+                        start: Position {
+                            line: 8,
+                            character: 2,
+                        },
+                        end: Position {
+                            line: 8,
+                            character: 15
+                        }
+                    }
+                }
+            )
+        }
     }
 }
