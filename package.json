@@ -40,8 +40,12 @@
     ],
     "commands": [
       {
-        "command": "vue2-ts-decorator.restart.tsserver",
-        "title": "Vue2TsDecorator: Restart tsserver"
+        "command": "vue-property-decorator-extension.restart.tsserver",
+        "title": "Vue Decorator Language Service: Restart tsserver"
+      },
+      {
+        "command": "vue-property-decorator-extension.clean.cache.and.restart",
+        "title": "Vue Decorator Language Service: Clean cache and restart"
       }
     ],
     "languages": [

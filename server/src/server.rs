@@ -14,18 +14,8 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::notification::{
     DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification,
 };
-use tower_lsp::lsp_types::{
-    CodeActionParams, CodeActionResponse, CompletionItem, CompletionParams, CompletionResponse,
-    CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbolParams,
-    DocumentSymbolResponse, ExecuteCommandOptions, ExecuteCommandParams, FileOperationFilter,
-    FileOperationPattern, FileOperationRegistrationOptions, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverParams, InitializeParams, InitializeResult,
-    InitializedParams, RenameFilesParams, SemanticTokensParams, SemanticTokensRangeParams,
-    SemanticTokensRangeResult, SemanticTokensResult, ServerCapabilities, ServerInfo,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Uri, WorkDoneProgressOptions, WorkspaceEdit,
-    WorkspaceFileOperationsServerCapabilities, WorkspaceServerCapabilities,
-};
+use tower_lsp::lsp_types::request::WorkDoneProgressCreate;
+use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
 
@@ -153,12 +143,17 @@ impl LanguageServer for VueLspServer {
                     },
                 }],
             });
-            let mut commands = vec!["vue2-ts-decorator.restart.tsserver".to_string()];
+            let mut commands = vec![
+                "vue-property-decorator-extension.restart.tsserver".to_string(),
+                "vue-property-decorator-extension.clean.cache.and.restart".to_string(),
+            ];
             if let Some(execute_command_provider) = result.capabilities.execute_command_provider {
                 let mut ts_commands = execute_command_provider
                     .commands
                     .iter()
-                    .map(|c| c.replace("_typescript", "vue2-ts-decorator_typescript"))
+                    .map(|c| {
+                        c.replace("_typescript", "vue-property-decorator-extension_typescript")
+                    })
                     .collect::<Vec<String>>();
                 commands.append(&mut ts_commands);
             }
@@ -196,7 +191,7 @@ impl LanguageServer for VueLspServer {
                     execute_command_provider: Some(ExecuteCommandOptions {
                         commands,
                         work_done_progress_options: WorkDoneProgressOptions {
-                            work_done_progress: None,
+                            work_done_progress: Some(true),
                         },
                     }),
                     ..Default::default()
@@ -757,13 +752,33 @@ impl LanguageServer for VueLspServer {
 
     async fn execute_command(&self, mut params: ExecuteCommandParams) -> Result<Option<Value>> {
         let text_documents = self.text_documents.lock().await;
-        if params.command == "vue2-ts-decorator.restart.tsserver" {
+        if params.command == "vue-property-decorator-extension.restart.tsserver" {
+            self.ts_server.write().await.restart(&text_documents).await;
+            Ok(None)
+        } else if params.command == "vue-property-decorator-extension.clean.cache.and.restart" {
+            let token = if let Some(token) = params.work_done_progress_params.work_done_token {
+                token
+            } else {
+                let token = NumberOrString::String("clean-cache-and.restart".to_string());
+                self.client
+                    .send_request::<WorkDoneProgressCreate>(WorkDoneProgressCreateParams {
+                        token: token.clone(),
+                    })
+                    .await
+                    .unwrap();
+                token
+            };
+            self.renderer
+                .lock()
+                .await
+                .clean_cache_and_restart(&self.client, token)
+                .await;
             self.ts_server.write().await.restart(&text_documents).await;
             Ok(None)
         } else {
             params.command = params
                 .command
-                .replace("vue2-ts-decorator_typescript", "_typescript");
+                .replace("vue-property-decorator-extension_typescript", "_typescript");
             self.ts_server.read().await.execute_command(params).await
         }
     }

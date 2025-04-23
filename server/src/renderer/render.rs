@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use lsp_textdocument::FullTextDocument;
-#[cfg(target_os = "windows")]
-use tokio::process::Command;
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
@@ -35,9 +33,6 @@ use super::{
     Renderer,
 };
 
-#[cfg(target_os = "windows")]
-const GIT_HEAD_FILE_NAME: &str = ".vue-property-decorator-extension-git-head";
-
 impl Renderer {
     /// 创建渲染目录，并进行渲染
     pub async fn init(&mut self, root_uri: &Uri, client: &Client, work_done_token: ProgressToken) {
@@ -51,33 +46,11 @@ impl Renderer {
         target_root_path.pop();
         let project_name = src_path.file_name().unwrap().to_str().unwrap();
         target_root_path.push(format!(".~${}", project_name));
-        // 是否跳过删除和重新复制 node_modules
+        // windows 下，如果目标目录已经存在，那么跳过删除和重新复制 node_modules
         #[cfg(target_os = "windows")]
-        let mut skip = false;
-        #[cfg(target_os = "windows")]
-        let mut cur_head = None;
+        let skip = target_root_path.exists();
+        #[cfg(not(target_os = "windows"))]
         if target_root_path.exists() {
-            #[cfg(target_os = "windows")]
-            {
-                // 获取上次启动时的 git hash
-                let mut config_path = target_root_path.clone();
-                config_path.push(GIT_HEAD_FILE_NAME);
-                if let Ok(output) = Command::new("git")
-                    .arg("rev-parse")
-                    .arg("HEAD")
-                    .output()
-                    .await
-                {
-                    cur_head = Some(String::from_utf8_lossy(&output.stdout).to_string());
-                    if let Ok(head) = fs::read_to_string(config_path).await {
-                        skip = cur_head == Some(head);
-                    }
-                }
-                if !skip {
-                    fs::remove_dir_all(&target_root_path).await.unwrap();
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
             fs::remove_dir_all(&target_root_path).await.unwrap();
         }
         #[cfg(target_os = "windows")]
@@ -130,7 +103,7 @@ impl Renderer {
                             if dst_path.parent().unwrap() == dst {
                                 progress
                                     .report(format!(
-                                        "Copying: node_modules/{}",
+                                        "Loading: node_modules/{}",
                                         dst_path.file_name().unwrap().to_string_lossy()
                                     ))
                                     .await;
@@ -152,12 +125,6 @@ impl Renderer {
                 copy_dir(&node_modules_src_path, &node_modules_target_path, &progress)
                     .await
                     .unwrap();
-                // 写入 cur_head
-                if let Some(head) = cur_head {
-                    let mut config_path = target_root_path.clone();
-                    config_path.push(GIT_HEAD_FILE_NAME);
-                    fs::write(config_path, head).await.unwrap();
-                }
             }
         }
         progress.finish().await;
@@ -353,6 +320,17 @@ impl Renderer {
                     .remove_node(&uri, &root_uri, &target_root_uri);
             }
         }
+    }
+
+    pub async fn clean_cache_and_restart(
+        &mut self,
+        client: &Client,
+        work_done_token: ProgressToken,
+    ) {
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        let target_root_path = util::to_file_path(&target_root_uri);
+        fs::remove_dir_all(&target_root_path).await.unwrap();
+        self.init(&root_uri, client, work_done_token).await;
     }
 }
 
