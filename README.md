@@ -49,6 +49,14 @@ To avoid interfering with each other, please disable extension like `Vetur(octre
 
 * `Volar` In this mode, there is no associated language feature between the properties of the registered component and the label properties on the template; Poor performance under large projects and even unusable
 
+## Command
+
+If something unexpected happens, you can try the following command to fix it:
+
+* `Vue Decorator Language Service: Clean cache and restart` if node_modules change on windows.
+
+* `Vue Decorator Language Service: Restart tsserver` if tsserver has error.
+
 ## Issues
 
 If you encounter any problem in use, you can create a [Issues](https://github.com/ren-wei/vue-property-decorator-extension/issues) and we will solve it for you as soon as possible.

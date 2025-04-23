@@ -47,6 +47,14 @@
 
 * `Volar` 在此模式下，注册组件的属性和 template 上的标签属性没有关联语言功能；在大型项目下性能很差，甚至无法使用
 
+## Command
+
+如果出现预料之外的事情，可以尝试以下命令修复:
+
+* `Vue Decorator Language Service: Clean cache and restart` 如果在 windows 系统下，node_modules 变更
+
+* `Vue Decorator Language Service: Restart tsserver` 如果 tsserver 发生错误
+
 ## Issues
 
 如果您在使用过程中遇到问题，您可以创建一个 [Issues](https://github.com/ren-wei/vue-property-decorator-extension/issues) ，我们会尽快为您解决。
