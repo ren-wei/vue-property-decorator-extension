@@ -311,7 +311,7 @@ impl ConvertTo for ExecuteCommandParams {
         ExecuteCommandParams {
             command: self
                 .command
-                .replace("vue2-ts-decorator_typescript", "_typescript"),
+                .replace("vue-property-decorator-extension_typescript", "_typescript"),
             ..self
         }
     }

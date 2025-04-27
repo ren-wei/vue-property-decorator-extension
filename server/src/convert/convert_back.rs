@@ -726,7 +726,7 @@ impl ConvertBack for Command {
         Command {
             command: self
                 .command
-                .replace("_typescript", "vue2-ts-decorator_typescript"),
+                .replace("_typescript", "vue-property-decorator-extension_typescript"),
             ..self
         }
     }
