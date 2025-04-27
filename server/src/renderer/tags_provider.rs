@@ -244,16 +244,12 @@ impl IHTMLDataProvider for ArcTagsProvider {
     }
 }
 
-#[tower_lsp::async_trait]
 impl ICompletionParticipant for ArcTagsProvider {
-    async fn on_html_attribute_value(
-        &self,
-        _context: HtmlAttributeValueContext,
-    ) -> Vec<CompletionItem> {
+    fn on_html_attribute_value(&self, _context: HtmlAttributeValueContext) -> Vec<CompletionItem> {
         vec![]
     }
 
-    async fn on_html_content(&self, context: HtmlContentContext) -> Vec<CompletionItem> {
+    fn on_html_content(&self, context: HtmlContentContext) -> Vec<CompletionItem> {
         let document = context.document;
         let html_document = context.html_document;
         let position = context.position;

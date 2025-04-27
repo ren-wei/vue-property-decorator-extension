@@ -407,15 +407,13 @@ impl LanguageServer for VueLspServer {
                         let html_server = self.html_server.lock().await;
                         let text_documents = self.text_documents.lock().await;
                         if let Some(text_document) = text_documents.get_document(uri) {
-                            hover = Ok(html_server
-                                .do_hover(
-                                    text_document,
-                                    position,
-                                    &html_document,
-                                    None,
-                                    &data_manager,
-                                )
-                                .await);
+                            hover = Ok(html_server.do_hover(
+                                text_document,
+                                position,
+                                &html_document,
+                                None,
+                                &data_manager,
+                            ));
                         }
                     }
                 }
@@ -504,16 +502,14 @@ impl LanguageServer for VueLspServer {
                         let text_documents = self.text_documents.lock().await;
                         debug!("lock all");
                         let text_document = text_documents.get_document(uri).unwrap();
-                        let html_result = html_server
-                            .do_complete(
-                                text_document,
-                                position,
-                                &html_document,
-                                document_context,
-                                None,
-                                &data_manager,
-                            )
-                            .await;
+                        let html_result = html_server.do_complete(
+                            text_document,
+                            position,
+                            &html_document,
+                            document_context,
+                            None,
+                            &data_manager,
+                        );
                         completion = Ok(Some(CompletionResponse::List(html_result)));
                     }
                 }

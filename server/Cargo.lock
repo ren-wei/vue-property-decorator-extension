@@ -360,18 +360,17 @@ dependencies = [
 
 [[package]]
 name = "html-languageservice"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9997591acb5d3a86c76e9e004ea213e8b4de8cc340d3f7f95a37a76e38a562ab"
+checksum = "961f244a493c80a9fd5f89d7c65647dfd926186e2f921c1b409422d9cb2bc9ac"
 dependencies = [
- "async-trait",
  "lazy_static",
  "lsp-textdocument",
  "lsp-types",
+ "multi-line-stream",
  "regex",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -622,6 +621,15 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "multi-line-stream"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f826687fecd0e0807dcc880158aebe73438651c7b30c6ca78a66e5f30debf7"
+dependencies = [
+ "regex",
 ]
 
 [[package]]

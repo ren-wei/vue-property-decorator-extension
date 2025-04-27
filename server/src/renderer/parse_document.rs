@@ -14,13 +14,13 @@ pub fn parse_document(document: &FullTextDocument) -> (Option<Node>, Option<Node
     let mut template = None;
     let mut style = vec![];
     for root in html_document.roots {
-        if root.tag == Some("script".to_string()) {
+        if root.tag.as_ref().is_some_and(|v| v == "script") {
             if root.start_tag_end.is_some() && root.end_tag_start.is_some() {
                 script = Some(root);
             }
-        } else if root.tag == Some("template".to_string()) {
+        } else if root.tag.as_ref().is_some_and(|v| v == "template") {
             template = Some(root);
-        } else if root.tag == Some("style".to_string()) {
+        } else if root.tag.as_ref().is_some_and(|v| v == "style") {
             style.push(root);
         }
     }
