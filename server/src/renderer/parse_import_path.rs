@@ -79,7 +79,7 @@ pub fn parse_import_path(
         return result;
     }
     // 处理别名
-    let mut file_path = path.to_string();
+    let mut file_path = path.to_string().replace("//", "/");
     for (key, value) in alias {
         if path.starts_with(key) {
             file_path = file_path.replace(key, value);
@@ -92,7 +92,7 @@ pub fn parse_import_path(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, path::PathBuf, str::FromStr};
+    use std::{collections::HashMap, str::FromStr};
 
     use tower_lsp::lsp_types::Uri;
 
@@ -115,7 +115,7 @@ mod tests {
             &HashMap::from_iter(alias.iter().map(|(k, v)| (k.to_string(), v.to_string()))),
             &root_uri,
         );
-        assert_eq!(result, PathBuf::from(expected));
+        assert_eq!(result.to_string_lossy(), expected);
     }
 
     #[test]
@@ -149,6 +149,11 @@ mod tests {
         assert_parse(
             "@api/metadata",
             "/tmp/project/api/metadata",
+            &[("@api/", "/tmp/project/api/")],
+        );
+        assert_parse(
+            "@api/path//to",
+            "/tmp/project/api/path/to",
             &[("@api/", "/tmp/project/api/")],
         );
     }
