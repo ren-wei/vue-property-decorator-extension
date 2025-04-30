@@ -196,11 +196,23 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
 
 fn compile_text(start: usize, end: usize, source: &str, result: &mut TemplateCompileResult) {
     let text = &source[start..end];
+    let mut in_comment = false;
+    let mut prev_end = 0;
     for cap in REG_DOUBLE_BRACES.captures_iter(text) {
-        let m = cap.get(1).unwrap();
-        result.add_wrap("(");
-        result.add_fragment(m.as_str(), start + m.start());
-        result.add_wrap(");");
+        let first = cap.get(0).unwrap();
+        let prev_text = &text[prev_end..first.start()];
+        prev_end = first.end();
+        if !in_comment && prev_text.contains("<!--") {
+            in_comment = true;
+        } else if in_comment && prev_text.contains("-->") {
+            in_comment = false;
+        }
+        if !in_comment {
+            let m = cap.get(1).unwrap();
+            result.add_wrap("(");
+            result.add_fragment(m.as_str(), start + m.start());
+            result.add_wrap(");");
+        }
     }
 }
 
@@ -462,6 +474,20 @@ mod tests {
             r#"<div @click="onClick($event)"></div>"#,
             "(()=>{onClick($event)});",
             &[(6, 13, 8), (14, 21, 7)],
+        );
+    }
+
+    #[test]
+    fn comment() {
+        assert_render(
+            "<div>{{ one }}<!-- {{ two }} --></div>",
+            &["( one );"].join(""),
+            &[(1, 7, 5)],
+        );
+        assert_render(
+            "<div>{{ one }}<!-- {{ two }} -->{{ three }}</div>",
+            &["( one );", "( three );"].join(""),
+            &[(1, 7, 5), (9, 34, 7)],
         );
     }
 }
