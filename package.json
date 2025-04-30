@@ -4,7 +4,7 @@
   "description": "This is a high-performance LSP extension of vscode that is support `vue2 + typescript + decorator` ( `vue-property-decorator`).",
   "author": "ren-wei",
   "license": "MIT",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "preview": true,
   "repository": {
     "type": "git",
