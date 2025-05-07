@@ -1426,6 +1426,7 @@ dependencies = [
  "html-languageservice",
  "lazy_static",
  "lsp-textdocument",
+ "multi-line-stream",
  "percent-encoding",
  "petgraph",
  "regex",

@@ -1,4 +1,5 @@
 use html_languageservice::parser::html_document::Node;
+use multi_line_stream::MultiLineStream;
 
 use crate::lazy::{REG_DOUBLE_BRACES, REG_V_FOR_WITH_INDEX};
 
@@ -201,12 +202,16 @@ fn compile_text(start: usize, end: usize, source: &str, result: &mut TemplateCom
     for cap in REG_DOUBLE_BRACES.captures_iter(text) {
         let first = cap.get(0).unwrap();
         let prev_text = &text[prev_end..first.start()];
-        prev_end = first.end();
-        if !in_comment && prev_text.contains("<!--") {
-            in_comment = true;
-        } else if in_comment && prev_text.contains("-->") {
-            in_comment = false;
+        let mut stream = MultiLineStream::new(prev_text, 0);
+        while !stream.eos() {
+            if in_comment {
+                in_comment = !stream.advance_until_chars("-->");
+            } else {
+                in_comment = stream.advance_until_chars("<!--");
+            }
         }
+
+        prev_end = first.end();
         if !in_comment {
             let m = cap.get(1).unwrap();
             result.add_wrap("(");
@@ -486,6 +491,11 @@ mod tests {
         );
         assert_render(
             "<div>{{ one }}<!-- {{ two }} -->{{ three }}</div>",
+            &["( one );", "( three );"].join(""),
+            &[(1, 7, 5), (9, 34, 7)],
+        );
+        assert_render(
+            "<div>{{ one }}<!-- xxxxxxxxx -->{{ three }}</div>",
             &["( one );", "( three );"].join(""),
             &[(1, 7, 5), (9, 34, 7)],
         );
