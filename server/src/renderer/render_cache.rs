@@ -204,12 +204,13 @@ impl RenderCacheGraph {
         if let RenderCache::VueRenderCache(cache) = cache {
             if let Some(script) = &cache.script {
                 // 获取继承组件的 props
+                let mut props = cache.props.iter().map(|v| &v.name[..]).collect::<Vec<_>>();
                 let extends_props = self.get_extends_props(uri);
-                let mut props = extends_props
+                let mut extends_props = extends_props
                     .iter()
                     .map(|v| &v.name[..])
                     .collect::<Vec<_>>();
-                props.append(&mut cache.props.iter().map(|v| &v.name[..]).collect::<Vec<_>>());
+                props.append(&mut extends_props);
                 Some(combined_rendered_results::combined_rendered_results(
                     script.start_tag_end.unwrap(),
                     script.end_tag_start.unwrap(),
