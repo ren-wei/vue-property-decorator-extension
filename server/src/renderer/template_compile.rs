@@ -64,15 +64,12 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
             if value.starts_with(r#"""#) && value.ends_with(r#"""#) && value.len() > 1 {
                 let value = &value[1..value.len() - 1];
                 if let Some((left, right)) = value.split_once(" in ") {
-                    if let Some(caps) = REG_V_FOR_WITH_INDEX.captures(left) {
-                        let item = caps.get(1).unwrap().as_str();
-                        let index = caps.get(2).unwrap().as_str();
-                        result.add_wrap(&format!("for(const {item} of {right})"));
+                    if REG_V_FOR_WITH_INDEX.is_match(left) {
+                        result.add_wrap(&format!("for(const __item__ of {right})"));
                         result.add_wrap("{");
-                        result.add_wrap(&format!("const {index};"));
                         close_str = "}"
                     } else {
-                        result.add_wrap(&format!("for(const {left} of {right})"));
+                        result.add_wrap(&format!("for(const __item__ of {right})"));
                         result.add_wrap("{");
                         close_str = "}";
                     }
@@ -98,16 +95,16 @@ fn compile_node(node: &Node, source: &str, result: &mut TemplateCompileResult) {
                             if let Some(caps) = REG_V_FOR_WITH_INDEX.captures(left) {
                                 let item = caps.get(1).unwrap();
                                 let index = caps.get(2).unwrap();
-                                result.add_wrap("(");
+                                result.add_wrap("const ");
                                 result.add_fragment(item.as_str(), value_offset + item.start());
-                                result.add_wrap(");");
-                                result.add_wrap("(");
+                                result.add_wrap(" = __item__;");
+                                result.add_wrap("const ");
                                 result.add_fragment(index.as_str(), value_offset + index.start());
-                                result.add_wrap(");");
+                                result.add_wrap(" = 0 as number;");
                             } else {
-                                result.add_wrap("(");
+                                result.add_wrap("const ");
                                 result.add_fragment(left, value_offset);
-                                result.add_wrap(");");
+                                result.add_wrap(" = __item__;");
                             }
                             result.add_wrap("(");
                             result.add_fragment(right, value_offset + left.len() + " in ".len());
@@ -353,15 +350,15 @@ mod tests {
         assert_render(
             r#"<TabPane :key="item.task.id" v-for="item in tabLists" :closable="true" class="content-tab-pane"></TabPane>"#,
             &[
-                "for(const item of tabLists){",
+                "for(const __item__ of tabLists){",
                 "(item.task.id);",
-                "(item);",
+                "const item = __item__;",
                 "(tabLists);",
                 "(true);",
                 "}",
             ]
             .join(""),
-            &[(29, 15, 12), (44, 36, 4), (51, 44, 8), (62, 65, 4)],
+            &[(33, 15, 12), (53, 36, 4), (70, 44, 8), (81, 65, 4)],
         );
     }
 
@@ -370,16 +367,15 @@ mod tests {
         assert_render(
             r#"<div :key="index" v-for="(item, index) in list"></div>"#,
             &[
-                "for(const item of list){",
-                "const index;",
+                "for(const __item__ of list){",
                 "(index);",
-                "(item);",
-                "(index);",
+                "const item = __item__;",
+                "const index = 0 as number;",
                 "(list);",
                 "}",
             ]
             .join(""),
-            &[(37, 11, 5), (45, 26, 4), (52, 32, 5), (60, 42, 4)],
+            &[(29, 11, 5), (42, 26, 4), (64, 32, 5), (85, 42, 4)],
         );
     }
 
