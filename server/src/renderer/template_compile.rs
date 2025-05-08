@@ -279,16 +279,13 @@ pub type CompileMapping = Vec<(usize, usize, usize)>;
 
 #[cfg(test)]
 mod tests {
-    use html_languageservice::HTMLDataManager;
+    use html_languageservice::{parser::html_parse, HTMLDataManager};
 
     use super::template_compile;
 
     fn assert_render(template: &str, expected: &str, expected_mapping: &[(usize, usize, usize)]) {
-        let html_document = html_languageservice::parse_html_document(
-            template,
-            "html",
-            &HTMLDataManager::default(),
-        );
+        let html_document =
+            html_parse::parse_html_document(template, "html", &HTMLDataManager::default(), true);
         let (render, mapping) = template_compile(&html_document.roots[0], template);
         assert_eq!(render, expected);
         assert_eq!(mapping, expected_mapping.to_vec());

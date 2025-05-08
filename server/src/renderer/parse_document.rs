@@ -1,14 +1,18 @@
-use html_languageservice::{parser::html_document::Node, HTMLDataManager};
+use html_languageservice::{
+    parser::{html_document::Node, html_parse},
+    HTMLDataManager,
+};
 use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::Range;
 
 /// 解析文档，输出 template 节点和 script 节点，并确保 script 节点存在 start_tag_end 和 end_tag_start
 pub fn parse_document(document: &FullTextDocument) -> (Option<Node>, Option<Node>, Vec<Node>) {
-    let empty_data_manager = HTMLDataManager::new(false, None);
-    let html_document = html_languageservice::parse_html_document(
+    let empty_data_manager = HTMLDataManager::default();
+    let html_document = html_parse::parse_html_document(
         document.get_content(None),
         document.language_id(),
         &empty_data_manager,
+        true,
     );
     let mut script = None;
     let mut template = None;
@@ -29,11 +33,12 @@ pub fn parse_document(document: &FullTextDocument) -> (Option<Node>, Option<Node
 
 /// 将文档指定范围解析为节点
 pub fn parse_as_node(document: &FullTextDocument, range: Option<Range>) -> Option<Node> {
-    let empty_data_manager = HTMLDataManager::new(false, None);
-    let html_document = html_languageservice::parse_html_document(
+    let empty_data_manager = HTMLDataManager::default();
+    let html_document = html_parse::parse_html_document(
         document.get_content(range),
         document.language_id(),
         &empty_data_manager,
+        true,
     );
     if html_document.roots.len() == 1 {
         Some(html_document.roots[0].clone())

@@ -360,9 +360,9 @@ dependencies = [
 
 [[package]]
 name = "html-languageservice"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "961f244a493c80a9fd5f89d7c65647dfd926186e2f921c1b409422d9cb2bc9ac"
+checksum = "57b6403a5a6a7dc5806ed543a503a82f528d4f101102863556979dcd48b9008a"
 dependencies = [
  "lazy_static",
  "lsp-textdocument",

@@ -58,10 +58,12 @@ impl VueLspServer {
             client.clone(),
             Arc::clone(&renderer),
         )));
-        let data_manager = Mutex::new(HTMLDataManager::default());
-        let html_server = Mutex::new(HTMLLanguageService::new(
-            &HTMLLanguageServiceOptions::default(),
-        ));
+        let html_server = HTMLLanguageService::new(&HTMLLanguageServiceOptions {
+            case_sensitive: Some(true),
+            ..Default::default()
+        });
+        let data_manager = Mutex::new(html_server.create_data_manager(true, None));
+        let html_server = Mutex::new(html_server);
         let vue_data_provider = VueDataProvider::new();
         let custom_data = StdMutex::new(None);
         VueLspServer {
@@ -95,6 +97,7 @@ impl VueLspServer {
             providers.push(Box::new(HTMLDataProvider::new(
                 "custom".to_string(),
                 custom_data,
+                true,
             )));
         }
         data_manager.set_data_providers(true, providers);

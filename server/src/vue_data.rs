@@ -10,6 +10,7 @@ impl VueDataProvider {
         VueDataProvider(Arc::new(HTMLDataProvider::new(
             "vue".to_string(),
             serde_json::from_str(VUE_DATA).unwrap(),
+            true,
         )))
     }
 }
