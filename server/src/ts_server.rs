@@ -375,8 +375,12 @@ impl TsServer {
                 match response {
                     GotoDefinitionResponse::Array(array) => {
                         let mut result = vec![];
-                        for item in array {
-                            if !renderer.is_position_valid(&item.uri, &item.range.start) {
+                        for mut item in array {
+                            if let Some(range) = renderer.get_original_range(&item.uri, &item.range)
+                            {
+                                item.range = range;
+                                result.push(item);
+                            } else if !renderer.is_position_valid(&item.uri, &item.range.start) {
                                 let response = self
                                     .server
                                     .send_request::<GotoDefinition>(GotoDefinitionParams {
@@ -408,8 +412,18 @@ impl TsServer {
                     GotoDefinitionResponse::Link(link) => {
                         let mut result: Vec<LocationLink> = vec![];
                         for mut item in link {
-                            let origin_selection_range = item.origin_selection_range;
-                            if !renderer.is_position_valid(
+                            // 处理 origin_selection_range
+                            if let Some(origin_selection_range) = item.origin_selection_range {
+                                item.origin_selection_range =
+                                    renderer.get_original_range(&uri, &origin_selection_range);
+                            }
+                            if let Some(target_selection_range) =
+                                renderer.get_original_range(&uri, &item.target_selection_range)
+                            {
+                                item.target_selection_range = target_selection_range;
+                                item.target_range = target_selection_range;
+                                result.push(item);
+                            } else if !renderer.is_position_valid(
                                 &item.target_uri,
                                 &item.target_selection_range.start,
                             ) {
@@ -435,7 +449,8 @@ impl TsServer {
                                 {
                                     for v in &mut value {
                                         // 重置 origin_selection_range 的值
-                                        if let Some(origin_selection_range) = origin_selection_range
+                                        if let Some(origin_selection_range) =
+                                            item.origin_selection_range
                                         {
                                             v.origin_selection_range = renderer
                                                 .get_original_range(&uri, &origin_selection_range);
@@ -458,7 +473,7 @@ impl TsServer {
                                 }
                             } else {
                                 // 重置 origin_selection_range 的值
-                                if let Some(origin_selection_range) = origin_selection_range {
+                                if let Some(origin_selection_range) = item.origin_selection_range {
                                     item.origin_selection_range =
                                         renderer.get_original_range(&uri, &origin_selection_range);
                                 }
@@ -477,8 +492,14 @@ impl TsServer {
                         }
                         return Ok(Some(GotoDefinitionResponse::Link(result)));
                     }
-                    GotoDefinitionResponse::Scalar(location) => {
-                        if !renderer.is_position_valid(&location.uri, &location.range.start) {
+                    GotoDefinitionResponse::Scalar(mut location) => {
+                        if let Some(range) =
+                            renderer.get_original_range(&location.uri, &location.range)
+                        {
+                            location.range = range;
+                            return Ok(Some(GotoDefinitionResponse::Scalar(location)));
+                        } else if !renderer.is_position_valid(&location.uri, &location.range.start)
+                        {
                             return self
                                 .server
                                 .send_request::<GotoDefinition>(GotoDefinitionParams {
