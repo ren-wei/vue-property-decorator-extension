@@ -116,6 +116,22 @@ impl VueLspServer {
             }])
             .await
             .unwrap();
+        if custom_data[0].is_object() {
+            if custom_data[0].as_object().unwrap().is_empty() {
+                *self.custom_data.lock().unwrap() = None;
+                return;
+            }
+        } else {
+            *self.custom_data.lock().unwrap() = None;
+            self.client
+                .show_message(
+                    MessageType::WARNING,
+                    "Parse configuration `vue-property-decorator.html.data` error: not object"
+                        .to_string(),
+                )
+                .await;
+            return;
+        }
         match serde_json::from_value::<HTMLDataV1>(custom_data[0].clone()) {
             Ok(custom_data) => {
                 *self.custom_data.lock().unwrap() = Some(custom_data);
