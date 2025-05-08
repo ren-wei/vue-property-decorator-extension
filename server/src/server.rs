@@ -1,6 +1,9 @@
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 
 use core::fmt::Debug;
+use html_languageservice::html_data::HTMLDataV1;
+use html_languageservice::language_facts::data_provider::{HTMLDataProvider, IHTMLDataProvider};
 use html_languageservice::parser::html_document::Node;
 use html_languageservice::parser::html_scanner::TokenType;
 use html_languageservice::{
@@ -11,6 +14,7 @@ use serde_json::{json, Value};
 use std::time;
 use tokio::sync::{Mutex, RwLock};
 use tower_lsp::jsonrpc::Result;
+use tower_lsp::lsp_types::notification::DidChangeConfiguration;
 use tower_lsp::lsp_types::notification::{
     DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification,
 };
@@ -33,6 +37,7 @@ pub struct VueLspServer {
     ts_server: Arc<RwLock<TsServer>>,
     renderer: Arc<Mutex<Renderer>>,
     vue_data_provider: VueDataProvider,
+    custom_data: StdMutex<Option<HTMLDataV1>>,
 }
 
 impl VueLspServer {
@@ -58,6 +63,7 @@ impl VueLspServer {
             &HTMLLanguageServiceOptions::default(),
         ));
         let vue_data_provider = VueDataProvider::new();
+        let custom_data = StdMutex::new(None);
         VueLspServer {
             is_shared,
             client,
@@ -67,6 +73,7 @@ impl VueLspServer {
             ts_server,
             renderer,
             vue_data_provider,
+            custom_data,
         }
     }
 
@@ -79,17 +86,49 @@ impl VueLspServer {
         };
 
         let mut data_manager = self.data_manager.lock().await;
-        data_manager.set_data_providers(
-            true,
-            vec![
-                Box::new(self.vue_data_provider.clone()),
-                Box::new(tags_provider.clone()),
-            ],
-        );
+        let mut providers: Vec<Box<dyn IHTMLDataProvider>> = vec![
+            Box::new(self.vue_data_provider.clone()),
+            Box::new(tags_provider.clone()),
+        ];
+        let custom_data = { self.custom_data.lock().unwrap().clone() };
+        if let Some(custom_data) = custom_data {
+            providers.push(Box::new(HTMLDataProvider::new(
+                "custom".to_string(),
+                custom_data,
+            )));
+        }
+        data_manager.set_data_providers(true, providers);
 
         let mut html_server = self.html_server.lock().await;
         html_server.set_completion_participants(vec![Box::new(tags_provider)]);
         debug!("(Vue2TsDecoratorServer/update_html_languageservice) done");
+    }
+
+    async fn get_configure(&self) {
+        let custom_data = self
+            .client
+            .configuration(vec![ConfigurationItem {
+                scope_uri: None,
+                section: Some("vue-property-decorator.html.data".to_string()),
+            }])
+            .await
+            .unwrap();
+        match serde_json::from_value::<HTMLDataV1>(custom_data[0].clone()) {
+            Ok(custom_data) => {
+                *self.custom_data.lock().unwrap() = Some(custom_data);
+            }
+            Err(e) => {
+                self.client
+                    .show_message(
+                        MessageType::WARNING,
+                        format!(
+                            "Parse configuration `vue-property-decorator.html.data` error: {}",
+                            e
+                        ),
+                    )
+                    .await;
+            }
+        }
     }
 
     /// 是否处理 uri
@@ -212,6 +251,15 @@ impl LanguageServer for VueLspServer {
     async fn initialized(&self, _params: InitializedParams) {
         info!("start");
         self.ts_server.read().await.initialized().await;
+        self.get_configure().await;
+        self.client
+            .register_capability(vec![Registration {
+                id: "vue-property-decorator-extension".to_string(),
+                method: DidChangeConfiguration::METHOD.to_string(),
+                register_options: None,
+            }])
+            .await
+            .unwrap();
         info!("done");
     }
 
@@ -357,6 +405,10 @@ impl LanguageServer for VueLspServer {
         let start_time = time::Instant::now();
         self.renderer.lock().await.did_delete_files(params).await;
         debug!("done: {:?}", start_time.elapsed());
+    }
+
+    async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
+        self.get_configure().await;
     }
 
     #[instrument]

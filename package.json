@@ -136,7 +136,15 @@
         }
       }
     ],
-    "configuration": {},
+    "configuration": {
+      "title": "Vue Decorator Language Service",
+      "properties": {
+        "vue-property-decorator.html.data": {
+          "type": "object",
+          "description": "%vue-property-decorator.html.data%"
+        }
+      }
+    },
     "semanticTokenScopes": [
       {
         "scopes": {
