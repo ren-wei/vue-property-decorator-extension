@@ -293,9 +293,12 @@ impl ConvertBack for CompletionResponse {
 impl ConvertBack for Location {
     /// 必须 root_uri, target_uri
     async fn convert_back(self, options: &ConvertOptions<'_>) -> Self {
+        let uri = options.uri.unwrap();
+        let renderer = options.renderer.unwrap();
+        let range = renderer.get_original_range(uri, &self.range);
         Location {
             uri: self.uri.convert_back(options).await,
-            ..self
+            range: range.unwrap_or(self.range),
         }
     }
 }
@@ -696,19 +699,13 @@ impl ConvertBack for Vec<Diagnostic> {
         let renderer = options.renderer.unwrap();
         let mut diags = vec![];
         for mut diag in self {
-            let start = renderer.get_original_position(&uri, &diag.range.start);
-            if let Some(start) = start {
+            let range = renderer.get_original_range(&uri, &diag.range);
+            if let Some(range) = range {
                 // 排除模版上的 `implicitly 'any' type` 错误
                 if diag.code == Some(NumberOrString::Number(7006)) {
                     continue;
                 }
-                let end = Position {
-                    line: start.line,
-                    // TODO: 这里 panic
-                    character: start.character + diag.range.end.character
-                        - diag.range.start.character,
-                };
-                diag.range = Range { start, end };
+                diag.range = range;
                 diag.related_information = diag.related_information.convert_back(options).await;
                 diags.push(diag);
             } else if renderer.is_position_valid(&uri, &diag.range.start) {
