@@ -29,6 +29,7 @@ pub struct LibComponent {
 #[derive(Debug)]
 pub struct LibComponentProp {
     pub name: String,
+    pub description: Option<Description>,
     pub location: Location,
 }
 
@@ -124,9 +125,11 @@ fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)>
                                 // TODO: 静态属性
                             } else {
                                 let name = ast::get_class_prop_name(&prop);
+                                let description = ast::get_class_prop_description(&prop, &comments);
                                 if name.len() > 0 {
                                     props.push(LibComponentProp {
                                         name,
+                                        description,
                                         location: Location {
                                             uri: util::create_uri_from_path(&path),
                                             range: Range {

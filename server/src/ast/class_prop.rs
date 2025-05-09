@@ -29,7 +29,7 @@ pub fn get_class_prop_name(class_prop: &ClassProp) -> String {
     }
 }
 
-pub fn _get_class_prop_description(
+pub fn get_class_prop_description(
     class_prop: &ClassProp,
     comments: &MultiThreadedComments,
 ) -> Option<Description> {

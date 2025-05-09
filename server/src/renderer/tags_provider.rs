@@ -130,14 +130,14 @@ impl Renderer {
                             for prop in &component.props {
                                 attributes.push(IAttributeData {
                                     name: prop.name.clone(),
-                                    description: None,
+                                    description: prop.description.clone(),
                                     value_set: None,
                                     values: None,
                                     references: None,
                                 });
                                 attributes.push(IAttributeData {
                                     name: format!(":{}", prop.name),
-                                    description: None,
+                                    description: prop.description.clone(),
                                     value_set: None,
                                     values: None,
                                     references: None,
