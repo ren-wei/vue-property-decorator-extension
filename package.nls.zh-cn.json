@@ -1,3 +1,3 @@
 {
-    "vue-property-decorator.html.data": "自定义额外的 HTML 标签属性，包括特定的 Vue 组件的属性或者全局属性，类型定义参考 [HTMLDataV1](https://github.com/ren-wei/html-languageservice/blob/master/src/html_data.rs#L5) 示例: [VUE_DATA](https://github.com/ren-wei/vue-property-decorator-extension/blob/master/server/src/vue_data.rs#L46)"
+    "vue-property-decorator.html.data": "自定义额外的 HTML 标签属性，包括特定的 Vue 组件的属性或者全局属性，类型定义参考 [HTMLDataV1](https://github.com/ren-wei/html-languageservice/blob/master/src/html_data.rs#L5) 示例: [VUE_DATA](https://github.com/ren-wei/vue-property-decorator-extension/blob/master/server/src/vue_data.rs#L47)"
 }

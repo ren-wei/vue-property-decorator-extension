@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use html_languageservice::language_facts::data_provider::{HTMLDataProvider, IHTMLDataProvider};
+use html_languageservice::language_facts::data_provider::{
+    HTMLDataProvider, HTMLDataProviderContent, IHTMLDataProvider,
+};
 
 #[derive(Clone)]
 pub struct VueDataProvider(Arc<HTMLDataProvider>);
@@ -31,8 +33,9 @@ impl IHTMLDataProvider for VueDataProvider {
     fn provide_attributes(
         &self,
         tag: &str,
+        content: &HTMLDataProviderContent<'_>,
     ) -> Vec<&html_languageservice::html_data::IAttributeData> {
-        self.0.provide_attributes(tag)
+        self.0.provide_attributes(tag, content)
     }
 
     fn provide_values(

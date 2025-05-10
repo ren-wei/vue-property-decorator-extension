@@ -5,7 +5,7 @@ use std::sync::Arc;
 use html_languageservice::html_data::{IAttributeData, ITagData, IValueData};
 use html_languageservice::language_facts::data_provider::{
     generate_documentation, GenerateDocumentationItem, GenerateDocumentationSetting,
-    IHTMLDataProvider,
+    HTMLDataProviderContent, IHTMLDataProvider,
 };
 use html_languageservice::participant::{
     HtmlAttributeValueContext, HtmlContentContext, ICompletionParticipant,
@@ -230,13 +230,36 @@ impl IHTMLDataProvider for ArcTagsProvider {
         &self.tags
     }
 
-    fn provide_attributes(&self, tag: &str) -> Vec<&IAttributeData> {
+    fn provide_attributes(
+        &self,
+        tag: &str,
+        content: &HTMLDataProviderContent<'_>,
+    ) -> Vec<&IAttributeData> {
+        let node = content
+            .html_document
+            .find_node_at(content.offset, &mut vec![])
+            .unwrap();
+        let exist_attrs = node.attribute_names();
         let tag_data = self.tags.iter().find(|t| t.name == tag);
+        let mut result = vec![];
         if let Some(tag_data) = tag_data {
-            tag_data.attributes.iter().collect()
-        } else {
-            vec![]
+            for attr in &tag_data.attributes {
+                if exist_attrs.contains(&&attr.name) {
+                    continue;
+                }
+                if attr.name.starts_with(":")
+                    && exist_attrs
+                        .iter()
+                        .map(|v| &v[..])
+                        .collect::<Vec<&str>>()
+                        .contains(&&attr.name[1..])
+                {
+                    continue;
+                }
+                result.push(attr);
+            }
         }
+        result
     }
 
     fn provide_values(&self, _tag: &str, _attribute: &str) -> Vec<&IValueData> {
