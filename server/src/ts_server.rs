@@ -111,7 +111,7 @@ impl TsServer {
         self.server.initialized().await;
     }
 
-    pub async fn did_open(&mut self, uri: &Uri, document: &FullTextDocument) {
+    pub async fn did_open(&self, uri: &Uri, document: &FullTextDocument) {
         let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             renderer: Some(&renderer),
@@ -158,7 +158,7 @@ impl TsServer {
     }
 
     pub async fn did_change(
-        &mut self,
+        &self,
         params: DidChangeTextDocumentParams,
         document: &FullTextDocument,
     ) {
@@ -190,7 +190,7 @@ impl TsServer {
             .await
     }
 
-    pub async fn did_save(&mut self, params: DidChangeTextDocumentParams) {
+    pub async fn did_save(&self, params: DidChangeTextDocumentParams) {
         let renderer = self.renderer.lock().await;
         let options = &ConvertOptions {
             renderer: Some(&renderer),

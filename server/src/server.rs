@@ -320,7 +320,7 @@ impl LanguageServer for VueLspServer {
             debug!("did_open:lock text_documents");
             let document = text_documents.get_document(&uri).unwrap();
             debug!("did_open:lock ts_server await");
-            let mut ts_server = ts_server.write().await;
+            let ts_server = ts_server.read().await;
             debug!("did_open:lock ts_server");
             ts_server.did_open(&uri, document).await;
             info!("did_open:done {:?}", start_time.elapsed());
@@ -345,9 +345,9 @@ impl LanguageServer for VueLspServer {
         let text_documents = self.text_documents.lock().await;
         let document = text_documents.get_document(uri).unwrap();
         debug!("lock ts_server await");
-        let mut ts_server = self.ts_server.write().await;
+        let ts_server = self.ts_server.read().await;
         debug!("lock ts_server");
-        ts_server.did_change(params, document).await;
+        ts_server.did_change(params, &document).await;
         info!("done {:?}", start_time.elapsed());
     }
 
@@ -386,7 +386,7 @@ impl LanguageServer for VueLspServer {
         };
         if let Some(change) = change {
             debug!("lock ts_server await");
-            let mut ts_server = self.ts_server.write().await;
+            let ts_server = self.ts_server.read().await;
             debug!("lock ts_server");
             ts_server.did_save(change).await;
         }
