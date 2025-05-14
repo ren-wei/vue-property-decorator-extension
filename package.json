@@ -21,6 +21,7 @@
     "ts",
     "typescript",
     "vue-property-decorator",
+    "vue-class-component",
     "lsp",
     "vue language server"
   ],
