@@ -56,14 +56,16 @@ impl TsServer {
         }
         path.push("tsserver.mjs");
 
-        let (mut server, mut rx) = LspServer::new("node", [path.to_str().unwrap(), "--stdio"]);
+        let (server, mut rx) = LspServer::new("node", [path.to_str().unwrap(), "--stdio"]);
         let server_ = server.clone();
 
         tokio::spawn(async move {
             loop {
                 if let Some(message) = rx.recv().await {
-                    let mut renderer = renderer.lock().await;
-                    TsServer::process_message(&client, &mut server, message, &mut renderer).await;
+                    let start_time = std::time::Instant::now();
+                    let renderer = renderer.lock().await;
+                    TsServer::process_message(&client, &server, message, &renderer).await;
+                    debug!("process_message time: {:?}", start_time.elapsed());
                 } else {
                     break;
                 }
@@ -644,9 +646,9 @@ impl TsServer {
     /// 处理来自服务器的消息
     async fn process_message(
         client: &Client,
-        server: &mut LspServer,
+        server: &LspServer,
         message: ServerMessage,
-        renderer: &mut Renderer,
+        renderer: &Renderer,
     ) {
         match message {
             ServerMessage::Notification(notification) => match &notification.method[..] {
