@@ -180,6 +180,15 @@ impl ConvertTo for GotoDefinitionParams {
     }
 }
 
+impl ConvertTo for ReferenceParams {
+    async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {
+        ReferenceParams {
+            text_document_position: self.text_document_position.convert_to(options).await,
+            ..self
+        }
+    }
+}
+
 impl ConvertTo for DocumentSymbolParams {
     /// 必须 root_uri, target_uri
     async fn convert_to(self, options: &ConvertOptions<'_>) -> Self {

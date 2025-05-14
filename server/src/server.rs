@@ -228,6 +228,7 @@ impl LanguageServer for VueLspServer {
                     hover_provider: result.capabilities.hover_provider,
                     completion_provider: result.capabilities.completion_provider,
                     definition_provider: result.capabilities.definition_provider,
+                    references_provider: result.capabilities.references_provider,
                     document_symbol_provider: result.capabilities.document_symbol_provider,
                     semantic_tokens_provider: result.capabilities.semantic_tokens_provider,
                     code_action_provider: result.capabilities.code_action_provider,
@@ -723,6 +724,21 @@ impl LanguageServer for VueLspServer {
 
         info!("done {:?}", start_time.elapsed());
         definition
+    }
+
+    #[instrument]
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        if !VueLspServer::is_uri_valid(&params.text_document_position.text_document.uri) {
+            return Ok(None);
+        }
+        info!("start");
+        let start_time = time::Instant::now();
+        debug!("lock ts_server await");
+        let ts_server = self.ts_server.read().await;
+        debug!("lock ts_server");
+        let result = ts_server.references(params).await;
+        info!("done {:?}", start_time.elapsed());
+        result
     }
 
     #[instrument]

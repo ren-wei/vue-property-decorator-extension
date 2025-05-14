@@ -10,6 +10,7 @@ use request::{
 };
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
+use tower_lsp::lsp_types::request::References;
 use tower_lsp::{jsonrpc, Client};
 use tower_lsp::{
     jsonrpc::Result,
@@ -527,6 +528,72 @@ impl TsServer {
             }
         }
         Ok(response)
+    }
+
+    pub async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let uri = params.text_document_position.text_document.uri.clone();
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        let context = params.context;
+        let params = params.convert_to(options).await;
+        drop(renderer);
+        debug!("send_request");
+        let start_time = std::time::Instant::now();
+
+        let result = self.server.send_request::<References>(params).await;
+        debug!("request time: {:?}", start_time.elapsed());
+
+        let renderer = self.renderer.lock().await;
+        let options = &ConvertOptions {
+            uri: Some(&uri),
+            renderer: Some(&renderer),
+        };
+        if let Some(list) = result.convert_back(options).await? {
+            let mut result = vec![];
+            for item in list {
+                if renderer.is_position_valid(&item.uri, &item.range.start) {
+                    result.push(item);
+                } else {
+                    debug!("send_request");
+                    let start_time = std::time::Instant::now();
+
+                    let res = self
+                        .server
+                        .send_request::<References>(ReferenceParams {
+                            text_document_position: TextDocumentPositionParams {
+                                text_document: TextDocumentIdentifier {
+                                    uri: item.uri.convert_to(options).await,
+                                },
+                                position: item.range.start,
+                            },
+                            work_done_progress_params: WorkDoneProgressParams {
+                                work_done_token: None,
+                            },
+                            partial_result_params: PartialResultParams {
+                                partial_result_token: None,
+                            },
+                            context,
+                        })
+                        .await
+                        .convert_back(options)
+                        .await;
+                    debug!("request time: {:?}", start_time.elapsed());
+                    if let Ok(Some(res)) = res {
+                        for item in res {
+                            if renderer.is_position_valid(&item.uri, &item.range.start) {
+                                result.push(item);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Some(result))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn document_symbol(
