@@ -26,6 +26,8 @@ use lsp_textdocument::FullTextDocument;
 use tower_lsp::lsp_types::{Position, Range, Uri};
 use tracing::error;
 
+pub use combined_rendered_results::get_fill_space_source;
+
 use crate::util;
 
 /// # 渲染器

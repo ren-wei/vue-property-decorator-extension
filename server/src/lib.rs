@@ -1,5 +1,7 @@
 mod ast;
 mod convert;
+mod css_server;
+mod diagnostics;
 mod lazy;
 pub mod log;
 mod renderer;

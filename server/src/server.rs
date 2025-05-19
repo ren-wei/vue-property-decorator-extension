@@ -12,6 +12,7 @@ use html_languageservice::{
 use lsp_textdocument::TextDocuments;
 use serde_json::{json, Value};
 use std::time;
+use tokio::join;
 use tokio::sync::{Mutex, RwLock};
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::notification::DidChangeConfiguration;
@@ -23,6 +24,8 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 use tracing::{debug, info, instrument};
 
+use crate::css_server::CssServer;
+use crate::diagnostics::DiagnosticsManager;
 use crate::renderer::{PositionType, Renderer};
 use crate::ts_server::TsServer;
 use crate::util;
@@ -31,10 +34,12 @@ use crate::vue_data::VueDataProvider;
 pub struct VueLspServer {
     is_shared: bool,
     client: Client,
-    text_documents: Arc<Mutex<TextDocuments>>,
+    text_documents: Arc<RwLock<TextDocuments>>,
     data_manager: Mutex<HTMLDataManager>,
+    _diagnostics: DiagnosticsManager,
     html_server: Mutex<HTMLLanguageService>,
-    ts_server: Arc<RwLock<TsServer>>,
+    ts_server: RwLock<TsServer>,
+    css_server: CssServer,
     renderer: Arc<Mutex<Renderer>>,
     vue_data_provider: VueDataProvider,
     custom_data: StdMutex<Option<HTMLDataV1>>,
@@ -43,7 +48,7 @@ pub struct VueLspServer {
 impl VueLspServer {
     pub fn new(
         client: Client,
-        shared_text_documents: Option<Arc<Mutex<TextDocuments>>>,
+        shared_text_documents: Option<Arc<RwLock<TextDocuments>>>,
     ) -> VueLspServer {
         let is_shared;
         let text_documents = if let Some(shared_text_documents) = shared_text_documents {
@@ -51,13 +56,15 @@ impl VueLspServer {
             shared_text_documents
         } else {
             is_shared = false;
-            Arc::new(Mutex::new(TextDocuments::new()))
+            Arc::new(RwLock::new(TextDocuments::new()))
         };
+        let mut diagnostics = DiagnosticsManager::new(client.clone());
         let renderer = Arc::new(Mutex::new(Renderer::new()));
-        let ts_server = Arc::new(RwLock::new(TsServer::new(
+        let ts_server = RwLock::new(TsServer::new(
             client.clone(),
             Arc::clone(&renderer),
-        )));
+            diagnostics.register(),
+        ));
         let html_server = HTMLLanguageService::new(&HTMLLanguageServiceOptions {
             case_sensitive: Some(true),
             ..Default::default()
@@ -66,13 +73,16 @@ impl VueLspServer {
         let html_server = Mutex::new(html_server);
         let vue_data_provider = VueDataProvider::new();
         let custom_data = StdMutex::new(None);
+        let css_server = CssServer::new(client.clone(), diagnostics.register());
         VueLspServer {
             is_shared,
             client,
             text_documents,
             data_manager,
+            _diagnostics: diagnostics,
             html_server,
             ts_server,
+            css_server,
             renderer,
             vue_data_provider,
             custom_data,
@@ -191,6 +201,7 @@ impl LanguageServer for VueLspServer {
                         .unwrap(),
                 )
                 .await;
+            self.css_server.initialize(params.clone()).await.unwrap();
             let result = self.ts_server.write().await.initialize(params).await?;
             let file_operation = Some(FileOperationRegistrationOptions {
                 filters: vec![FileOperationFilter {
@@ -270,6 +281,7 @@ impl LanguageServer for VueLspServer {
     #[instrument]
     async fn initialized(&self, _params: InitializedParams) {
         info!("start");
+        self.css_server.initialized().await;
         self.ts_server.read().await.initialized().await;
         self.get_configure().await;
         self.client
@@ -291,41 +303,46 @@ impl LanguageServer for VueLspServer {
         info!("start");
         let start_time = time::Instant::now();
         if !self.is_shared {
-            let mut text_documents = self.text_documents.lock().await;
+            let mut text_documents = self.text_documents.write().await;
             text_documents.listen(
                 DidOpenTextDocument::METHOD,
                 &serde_json::to_value(&params).unwrap(),
             );
         }
         let uri = params.text_document.uri.clone();
-        let renderer = Arc::clone(&self.renderer);
-        let text_documents = Arc::clone(&self.text_documents);
-        let ts_server = Arc::clone(&self.ts_server);
         {
-            renderer.lock().await.did_open(&uri).await;
+            self.renderer.lock().await.did_open(&uri).await;
         }
-        tokio::spawn(async move {
-            loop {
-                let is_wait = {
-                    let renderer = renderer.lock().await;
-                    renderer.is_wait_create(&uri)
-                };
-                if is_wait {
-                    tokio::task::yield_now().await;
-                } else {
-                    break;
+        join!(
+            async {
+                loop {
+                    let is_wait = {
+                        let renderer = self.renderer.lock().await;
+                        renderer.is_wait_create(&uri)
+                    };
+                    if is_wait {
+                        tokio::task::yield_now().await;
+                    } else {
+                        break;
+                    }
+                }
+                debug!("did_open:lock text_documents await");
+                let text_documents = self.text_documents.read().await;
+                debug!("did_open:lock text_documents");
+                let document = text_documents.get_document(&uri).unwrap();
+                debug!("did_open:lock ts_server await");
+                let ts_server = self.ts_server.read().await;
+                debug!("did_open:lock ts_server");
+                ts_server.did_open(&uri, document).await;
+                info!("did_open:done {:?}", start_time.elapsed());
+            },
+            async {
+                let html_document = { self.renderer.lock().await.get_html_document(&uri) };
+                if let Some(html_document) = html_document {
+                    self.css_server.did_open(params, &html_document).await;
                 }
             }
-            debug!("did_open:lock text_documents await");
-            let text_documents = text_documents.lock().await;
-            debug!("did_open:lock text_documents");
-            let document = text_documents.get_document(&uri).unwrap();
-            debug!("did_open:lock ts_server await");
-            let ts_server = ts_server.read().await;
-            debug!("did_open:lock ts_server");
-            ts_server.did_open(&uri, document).await;
-            info!("did_open:done {:?}", start_time.elapsed());
-        });
+        );
     }
 
     #[instrument]
@@ -336,19 +353,33 @@ impl LanguageServer for VueLspServer {
         info!("start");
         let start_time = time::Instant::now();
         if !self.is_shared {
-            let mut text_documents = self.text_documents.lock().await;
+            let mut text_documents = self.text_documents.write().await;
             text_documents.listen(
                 DidChangeTextDocument::METHOD,
                 &serde_json::to_value(&params).unwrap(),
             );
         }
-        let uri = &params.text_document.uri.clone();
-        let text_documents = self.text_documents.lock().await;
-        let document = text_documents.get_document(uri).unwrap();
-        debug!("lock ts_server await");
-        let ts_server = self.ts_server.read().await;
-        debug!("lock ts_server");
-        ts_server.did_change(params, &document).await;
+        let uri = params.text_document.uri.clone();
+        let text_documents = self.text_documents.read().await;
+        let document = text_documents.get_document(&uri).unwrap();
+        let css_params = params.clone();
+        join!(
+            async {
+                debug!("lock ts_server await");
+                let ts_server = self.ts_server.read().await;
+                debug!("lock ts_server");
+                ts_server.did_change(params, &document).await;
+            },
+            async {
+                let html_document = { self.renderer.lock().await.get_html_document(&uri) };
+                if let Some(html_document) = html_document {
+                    self.css_server
+                        .did_change(css_params, &document, &html_document)
+                        .await;
+                }
+            }
+        );
+
         info!("done {:?}", start_time.elapsed());
     }
 
@@ -360,13 +391,25 @@ impl LanguageServer for VueLspServer {
         info!("start");
         let start_time = time::Instant::now();
         if !self.is_shared {
-            let mut text_documents = self.text_documents.lock().await;
+            let mut text_documents = self.text_documents.write().await;
             text_documents.listen(
                 DidCloseTextDocument::METHOD,
                 &serde_json::to_value(&params).unwrap(),
             );
         }
-        self.ts_server.read().await.did_close(params).await;
+        let css_params = params.clone();
+        join!(
+            async {
+                self.ts_server.read().await.did_close(params).await;
+            },
+            async {
+                let uri = css_params.text_document.uri.clone();
+                let html_document = { self.renderer.lock().await.get_html_document(&uri) };
+                if let Some(html_document) = html_document {
+                    self.css_server.did_close(css_params, &html_document).await;
+                }
+            }
+        );
         info!("done {:?}", start_time.elapsed());
     }
 
@@ -477,7 +520,7 @@ impl LanguageServer for VueLspServer {
                     if let Some(html_document) = html_document {
                         let data_manager = self.data_manager.lock().await;
                         let html_server = self.html_server.lock().await;
-                        let text_documents = self.text_documents.lock().await;
+                        let text_documents = self.text_documents.read().await;
                         if let Some(text_document) = text_documents.get_document(uri) {
                             hover = Ok(html_server.do_hover(
                                 text_document,
@@ -487,6 +530,16 @@ impl LanguageServer for VueLspServer {
                                 &data_manager,
                             ));
                         }
+                    }
+                }
+                PositionType::Style => {
+                    info!("In style");
+                    let html_document = {
+                        let renderer = self.renderer.lock().await;
+                        renderer.get_html_document(uri)
+                    };
+                    if let Some(html_document) = html_document {
+                        hover = self.css_server.hover(params, &html_document).await;
                     }
                 }
             }
@@ -571,7 +624,7 @@ impl LanguageServer for VueLspServer {
                         debug!("lock all await");
                         let data_manager = self.data_manager.lock().await;
                         let html_server = self.html_server.lock().await;
-                        let text_documents = self.text_documents.lock().await;
+                        let text_documents = self.text_documents.read().await;
                         debug!("lock all");
                         let text_document = text_documents.get_document(uri).unwrap();
                         let html_result = html_server.do_complete(
@@ -583,6 +636,15 @@ impl LanguageServer for VueLspServer {
                             &data_manager,
                         );
                         completion = Ok(Some(CompletionResponse::List(html_result)));
+                    }
+                }
+                PositionType::Style => {
+                    let html_document = {
+                        let renderer = self.renderer.lock().await;
+                        renderer.get_html_document(uri)
+                    };
+                    if let Some(html_document) = html_document {
+                        completion = self.css_server.completion(params, &html_document).await;
                     }
                 }
             }
@@ -669,7 +731,7 @@ impl LanguageServer for VueLspServer {
                         renderer.get_html_document(uri)
                     };
                     if let Some(html_document) = html_document {
-                        let text_documents = self.text_documents.lock().await;
+                        let text_documents = self.text_documents.read().await;
                         let text_document = text_documents.get_document(uri).unwrap();
                         let root =
                             html_document.find_root_at(text_document.offset_at(*position) as usize);
@@ -719,6 +781,7 @@ impl LanguageServer for VueLspServer {
                         }
                     }
                 }
+                PositionType::Style => {}
             }
         }
 
@@ -761,7 +824,7 @@ impl LanguageServer for VueLspServer {
         };
         if let Some(html_document) = html_document {
             debug!("lock text_documents await");
-            let text_documents = self.text_documents.lock().await;
+            let text_documents = self.text_documents.read().await;
             debug!("lock text_documents");
             let text_document = text_documents.get_document(uri).unwrap();
 
@@ -834,7 +897,7 @@ impl LanguageServer for VueLspServer {
     }
 
     async fn execute_command(&self, mut params: ExecuteCommandParams) -> Result<Option<Value>> {
-        let text_documents = self.text_documents.lock().await;
+        let text_documents = self.text_documents.read().await;
         if params.command == "vue-property-decorator-extension.restart.tsserver" {
             self.ts_server.write().await.restart(&text_documents).await;
             Ok(None)

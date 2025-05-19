@@ -75,6 +75,14 @@ impl Renderer {
                     return Some(PositionType::Script);
                 }
             }
+            if cache
+                .style
+                .iter()
+                .find(|v| v.start_tag_end.unwrap() < offset && offset < v.end_tag_start.unwrap())
+                .is_some()
+            {
+                return Some(PositionType::Style);
+            }
         }
         None
     }
@@ -145,4 +153,5 @@ pub enum PositionType {
     Script,
     Template,
     TemplateExpr(Position),
+    Style,
 }

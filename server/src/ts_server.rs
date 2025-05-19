@@ -9,6 +9,7 @@ use request::{
     WillRenameFiles,
 };
 use serde_json::{json, Value};
+use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 use tower_lsp::lsp_types::request::References;
 use tower_lsp::{jsonrpc, Client};
@@ -36,20 +37,30 @@ pub struct TsServer {
     server: LspServer,
     initialize_params: InitializeParams,
     renderer: Arc<Mutex<Renderer>>,
+    tx: Sender<(Uri, Option<i32>, Vec<Diagnostic>)>,
 }
 
 impl TsServer {
-    pub fn new(client: Client, renderer: Arc<Mutex<Renderer>>) -> TsServer {
-        let server = TsServer::spawn(client.clone(), Arc::clone(&renderer));
+    pub fn new(
+        client: Client,
+        renderer: Arc<Mutex<Renderer>>,
+        tx: Sender<(Uri, Option<i32>, Vec<Diagnostic>)>,
+    ) -> TsServer {
+        let server = TsServer::spawn(client.clone(), Arc::clone(&renderer), tx.clone());
         TsServer {
             client,
             server,
             renderer,
             initialize_params: InitializeParams::default(),
+            tx,
         }
     }
 
-    fn spawn(client: Client, renderer: Arc<Mutex<Renderer>>) -> LspServer {
+    fn spawn(
+        client: Client,
+        renderer: Arc<Mutex<Renderer>>,
+        tx: Sender<(Uri, Option<i32>, Vec<Diagnostic>)>,
+    ) -> LspServer {
         let exe_path = std::env::current_exe().unwrap();
         let mut path = exe_path.parent().unwrap().to_path_buf();
         while !path.file_name().is_some_and(|name| name == "server") {
@@ -65,7 +76,7 @@ impl TsServer {
                 if let Some(message) = rx.recv().await {
                     let start_time = std::time::Instant::now();
                     let renderer = renderer.lock().await;
-                    TsServer::process_message(&client, &server, message, &renderer).await;
+                    TsServer::process_message(&client, &server, message, &renderer, &tx).await;
                     debug!("process_message time: {:?}", start_time.elapsed());
                 } else {
                     break;
@@ -82,7 +93,7 @@ impl TsServer {
         self.server.exit().await;
         let client = self.client.clone();
         let renderer = self.renderer.clone();
-        let server = TsServer::spawn(client, renderer);
+        let server = TsServer::spawn(client, renderer, self.tx.clone());
         self.server = server;
         self.server
             .initialize(self.initialize_params.clone())
@@ -107,7 +118,7 @@ impl TsServer {
             },
             ..params.clone()
         };
-        self.server.initialize(params).await
+        self.server.initialize(self.initialize_params.clone()).await
     }
 
     pub async fn initialized(&self) {
@@ -716,6 +727,7 @@ impl TsServer {
         server: &LspServer,
         message: ServerMessage,
         renderer: &Renderer,
+        tx: &Sender<(Uri, Option<i32>, Vec<Diagnostic>)>,
     ) {
         match message {
             ServerMessage::Notification(notification) => match &notification.method[..] {
@@ -742,9 +754,7 @@ impl TsServer {
                             renderer: Some(&renderer),
                         })
                         .await;
-                    client
-                        .publish_diagnostics(uri.clone(), diags, params.version)
-                        .await;
+                    tx.send((uri.clone(), params.version, diags)).await.unwrap();
                 }
                 Progress::METHOD => {
                     let params: ProgressParams =
