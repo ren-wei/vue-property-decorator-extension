@@ -11934,6 +11934,9 @@ function repeat(value, count) {
     }
     return s;
 }
+function convertSimple2RegExpPattern(pattern) {
+    return pattern.replace(/[\-\\\{\}\+\?\|\^\$\.\,\[\]\(\)\#\s]/g, '\\$&').replace(/[\*]/g, '.*');
+}
 
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
@@ -12561,6 +12564,61 @@ class FunctionArgument extends Node {
         return this.value;
     }
 }
+class IfStatement extends BodyDeclaration {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.If;
+    }
+    setExpression(node) {
+        return this.setNode('expression', node, 0);
+    }
+    setElseClause(elseClause) {
+        return this.setNode('elseClause', elseClause);
+    }
+}
+class ForStatement extends BodyDeclaration {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.For;
+    }
+    setVariable(node) {
+        return this.setNode('variable', node, 0);
+    }
+}
+class EachStatement extends BodyDeclaration {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.Each;
+    }
+    getVariables() {
+        if (!this.variables) {
+            this.variables = new Nodelist(this);
+        }
+        return this.variables;
+    }
+}
+class WhileStatement extends BodyDeclaration {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.While;
+    }
+}
+class ElseStatement extends BodyDeclaration {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.Else;
+    }
+}
 class FunctionDeclaration extends BodyDeclaration {
     constructor(offset, length) {
         super(offset, length);
@@ -12652,6 +12710,71 @@ class Import extends Node {
             return true;
         }
         return false;
+    }
+}
+class Use extends Node {
+    get type() {
+        return NodeType.Use;
+    }
+    setParameters(value) {
+        return this.setNode('parameters', value);
+    }
+    getParameters() {
+        return this.parameters;
+    }
+    setIdentifier(node) {
+        return this.setNode('identifier', node, 0);
+    }
+    getIdentifier() {
+        return this.identifier;
+    }
+}
+class ModuleConfiguration extends Node {
+    get type() {
+        return NodeType.ModuleConfiguration;
+    }
+    setIdentifier(node) {
+        return this.setNode('identifier', node, 0);
+    }
+    getIdentifier() {
+        return this.identifier;
+    }
+    getName() {
+        return this.identifier ? this.identifier.getText() : '';
+    }
+    setValue(node) {
+        return this.setNode('value', node, 0);
+    }
+    getValue() {
+        return this.value;
+    }
+}
+class Forward extends Node {
+    get type() {
+        return NodeType.Forward;
+    }
+    setIdentifier(node) {
+        return this.setNode('identifier', node, 0);
+    }
+    getIdentifier() {
+        return this.identifier;
+    }
+    setParameters(value) {
+        return this.setNode('parameters', value);
+    }
+    getParameters() {
+        return this.parameters;
+    }
+}
+class ForwardVisibility extends Node {
+    get type() {
+        return NodeType.ForwardVisibility;
+    }
+    setIdentifier(node) {
+        return this.setNode('identifier', node, 0);
+    }
+    getIdentifier() {
+        return this.identifier;
     }
 }
 class Namespace extends Node {
@@ -13021,6 +13144,34 @@ class ExtendsReference extends Node {
         return this.selectors;
     }
 }
+class MixinContentReference extends Node {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.MixinContentReference;
+    }
+    getArguments() {
+        if (!this.arguments) {
+            this.arguments = new Nodelist(this);
+        }
+        return this.arguments;
+    }
+}
+class MixinContentDeclaration extends BodyDeclaration {
+    constructor(offset, length) {
+        super(offset, length);
+    }
+    get type() {
+        return NodeType.MixinContentDeclaration;
+    }
+    getParameters() {
+        if (!this.parameters) {
+            this.parameters = new Nodelist(this);
+        }
+        return this.parameters;
+    }
+}
 class MixinReference extends Node {
     constructor(offset, length) {
         super(offset, length);
@@ -13098,6 +13249,41 @@ class UnknownAtRule extends BodyDeclaration {
     }
     getAtRuleName() {
         return this.atRuleName;
+    }
+}
+class ListEntry extends Node {
+    get type() {
+        return NodeType.ListEntry;
+    }
+    setKey(node) {
+        return this.setNode('key', node, 0);
+    }
+    setValue(node) {
+        return this.setNode('value', node, 1);
+    }
+}
+class LessGuard extends Node {
+    getConditions() {
+        if (!this.conditions) {
+            this.conditions = new Nodelist(this);
+        }
+        return this.conditions;
+    }
+}
+class GuardCondition extends Node {
+    setVariable(node) {
+        return this.setNode('variable', node);
+    }
+}
+class Module extends Node {
+    get type() {
+        return NodeType.Module;
+    }
+    setIdentifier(node) {
+        return this.setNode('identifier', node, 0);
+    }
+    getIdentifier() {
+        return this.identifier;
     }
 }
 var Level;
@@ -22268,11 +22454,804 @@ class SCSSIssueType {
         this.message = message;
     }
 }
-({
+const SCSSParseError = {
     FromExpected: new SCSSIssueType('scss-fromexpected', mainExports.t("'from' expected")),
     ThroughOrToExpected: new SCSSIssueType('scss-throughexpected', mainExports.t("'through' or 'to' expected")),
     InExpected: new SCSSIssueType('scss-fromexpected', mainExports.t("'in' expected")),
-});
+};
+
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+/// <summary>
+/// A parser for scss
+/// http://sass-lang.com/documentation/file.SASS_REFERENCE.html
+/// </summary>
+class SCSSParser extends Parser {
+    constructor() {
+        super(new SCSSScanner());
+    }
+    _parseStylesheetStatement(isNested = false) {
+        if (this.peek(TokenType.AtKeyword)) {
+            return this._parseWarnAndDebug() // @warn, @debug and @error statements
+                || this._parseControlStatement() // @if, @while, @for, @each
+                || this._parseMixinDeclaration() // @mixin
+                || this._parseMixinContent() // @content
+                || this._parseMixinReference() // @include
+                || this._parseFunctionDeclaration() // @function
+                || this._parseForward() // @forward
+                || this._parseUse() // @use
+                || this._parseRuleset(isNested) // @at-rule
+                || super._parseStylesheetAtStatement(isNested);
+        }
+        return this._parseRuleset(true) || this._parseVariableDeclaration();
+    }
+    _parseImport() {
+        if (!this.peekKeyword('@import')) {
+            return null;
+        }
+        const node = this.create(Import);
+        this.consumeToken();
+        if (!node.addChild(this._parseURILiteral()) && !node.addChild(this._parseStringLiteral())) {
+            return this.finish(node, ParseError.URIOrStringExpected);
+        }
+        while (this.accept(TokenType.Comma)) {
+            if (!node.addChild(this._parseURILiteral()) && !node.addChild(this._parseStringLiteral())) {
+                return this.finish(node, ParseError.URIOrStringExpected);
+            }
+        }
+        return this._completeParseImport(node);
+    }
+    // scss variables: $font-size: 12px;
+    _parseVariableDeclaration(panic = []) {
+        if (!this.peek(VariableName)) {
+            return null;
+        }
+        const node = this.create(VariableDeclaration);
+        if (!node.setVariable(this._parseVariable())) {
+            return null;
+        }
+        if (!this.accept(TokenType.Colon)) {
+            return this.finish(node, ParseError.ColonExpected);
+        }
+        if (this.prevToken) {
+            node.colonPosition = this.prevToken.offset;
+        }
+        if (!node.setValue(this._parseExpr())) {
+            return this.finish(node, ParseError.VariableValueExpected, [], panic);
+        }
+        while (this.peek(TokenType.Exclamation)) {
+            if (node.addChild(this._tryParsePrio())) ;
+            else {
+                this.consumeToken();
+                if (!this.peekRegExp(TokenType.Ident, /^(default|global)$/)) {
+                    return this.finish(node, ParseError.UnknownKeyword);
+                }
+                this.consumeToken();
+            }
+        }
+        if (this.peek(TokenType.SemiColon)) {
+            node.semicolonPosition = this.token.offset; // not part of the declaration, but useful information for code assist
+        }
+        return this.finish(node);
+    }
+    _parseMediaCondition() {
+        return this._parseInterpolation() || super._parseMediaCondition();
+    }
+    _parseMediaFeatureRangeOperator() {
+        return this.accept(SmallerEqualsOperator) || this.accept(GreaterEqualsOperator) || super._parseMediaFeatureRangeOperator();
+    }
+    _parseMediaFeatureName() {
+        return this._parseModuleMember()
+            || this._parseFunction() // function before ident
+            || this._parseIdent()
+            || this._parseVariable();
+    }
+    _parseKeyframeSelector() {
+        return this._tryParseKeyframeSelector()
+            || this._parseControlStatement(this._parseKeyframeSelector.bind(this))
+            || this._parseWarnAndDebug() // @warn, @debug and @error statements
+            || this._parseMixinReference() // @include
+            || this._parseFunctionDeclaration() // @function
+            || this._parseVariableDeclaration()
+            || this._parseMixinContent();
+    }
+    _parseVariable() {
+        if (!this.peek(VariableName)) {
+            return null;
+        }
+        const node = this.create(Variable);
+        this.consumeToken();
+        return node;
+    }
+    _parseModuleMember() {
+        const pos = this.mark();
+        const node = this.create(Module);
+        if (!node.setIdentifier(this._parseIdent([ReferenceType.Module]))) {
+            return null;
+        }
+        if (this.hasWhitespace()
+            || !this.acceptDelim('.')
+            || this.hasWhitespace()) {
+            this.restoreAtMark(pos);
+            return null;
+        }
+        if (!node.addChild(this._parseVariable() || this._parseFunction())) {
+            return this.finish(node, ParseError.IdentifierOrVariableExpected);
+        }
+        return node;
+    }
+    _parseIdent(referenceTypes) {
+        if (!this.peek(TokenType.Ident) && !this.peek(InterpolationFunction) && !this.peekDelim('-')) {
+            return null;
+        }
+        const node = this.create(Identifier);
+        node.referenceTypes = referenceTypes;
+        node.isCustomProperty = this.peekRegExp(TokenType.Ident, /^--/);
+        let hasContent = false;
+        const indentInterpolation = () => {
+            const pos = this.mark();
+            if (this.acceptDelim('-')) {
+                if (!this.hasWhitespace()) {
+                    this.acceptDelim('-');
+                }
+                if (this.hasWhitespace()) {
+                    this.restoreAtMark(pos);
+                    return null;
+                }
+            }
+            return this._parseInterpolation();
+        };
+        while (this.accept(TokenType.Ident) || node.addChild(indentInterpolation()) || (hasContent && this.acceptRegexp(/^[\w-]/))) {
+            hasContent = true;
+            if (this.hasWhitespace()) {
+                break;
+            }
+        }
+        return hasContent ? this.finish(node) : null;
+    }
+    _parseTermExpression() {
+        return this._parseModuleMember() ||
+            this._parseVariable() ||
+            this._parseNestingSelector() ||
+            //this._tryParsePrio() ||
+            super._parseTermExpression();
+    }
+    _parseInterpolation() {
+        if (this.peek(InterpolationFunction)) {
+            const node = this.create(Interpolation);
+            this.consumeToken();
+            if (!node.addChild(this._parseExpr()) && !this._parseNestingSelector()) {
+                if (this.accept(TokenType.CurlyR)) {
+                    return this.finish(node);
+                }
+                return this.finish(node, ParseError.ExpressionExpected);
+            }
+            if (!this.accept(TokenType.CurlyR)) {
+                return this.finish(node, ParseError.RightCurlyExpected);
+            }
+            return this.finish(node);
+        }
+        return null;
+    }
+    _parseOperator() {
+        if (this.peek(EqualsOperator) || this.peek(NotEqualsOperator)
+            || this.peek(GreaterEqualsOperator) || this.peek(SmallerEqualsOperator)
+            || this.peekDelim('>') || this.peekDelim('<')
+            || this.peekIdent('and') || this.peekIdent('or')
+            || this.peekDelim('%')) {
+            const node = this.createNode(NodeType.Operator);
+            this.consumeToken();
+            return this.finish(node);
+        }
+        return super._parseOperator();
+    }
+    _parseUnaryOperator() {
+        if (this.peekIdent('not')) {
+            const node = this.create(Node);
+            this.consumeToken();
+            return this.finish(node);
+        }
+        return super._parseUnaryOperator();
+    }
+    _parseRuleSetDeclaration() {
+        if (this.peek(TokenType.AtKeyword)) {
+            return this._parseKeyframe() // nested @keyframe
+                || this._parseImport() // nested @import
+                || this._parseMedia(true) // nested @media
+                || this._parseFontFace() // nested @font-face
+                || this._parseWarnAndDebug() // @warn, @debug and @error statements
+                || this._parseControlStatement() // @if, @while, @for, @each
+                || this._parseFunctionDeclaration() // @function
+                || this._parseExtends() // @extends
+                || this._parseMixinReference() // @include
+                || this._parseMixinContent() // @content
+                || this._parseMixinDeclaration() // nested @mixin
+                || this._parseRuleset(true) // @at-rule
+                || this._parseSupports(true) // @supports
+                || this._parseLayer() // @layer
+                || this._parsePropertyAtRule() // @property
+                || this._parseContainer(true) // nested @container
+                || this._parseRuleSetDeclarationAtStatement();
+        }
+        return this._parseVariableDeclaration() // variable declaration
+            || this._tryParseRuleset(true) // nested ruleset
+            || this._parseDeclaration(); // try css ruleset declaration as last so in the error case, the ast will contain a declaration
+    }
+    _parseDeclaration(stopTokens) {
+        const custonProperty = this._tryParseCustomPropertyDeclaration(stopTokens);
+        if (custonProperty) {
+            return custonProperty;
+        }
+        const node = this.create(Declaration);
+        if (!node.setProperty(this._parseProperty())) {
+            return null;
+        }
+        if (!this.accept(TokenType.Colon)) {
+            return this.finish(node, ParseError.ColonExpected, [TokenType.Colon], stopTokens || [TokenType.SemiColon]);
+        }
+        if (this.prevToken) {
+            node.colonPosition = this.prevToken.offset;
+        }
+        let hasContent = false;
+        if (node.setValue(this._parseExpr())) {
+            hasContent = true;
+            node.addChild(this._parsePrio());
+        }
+        if (this.peek(TokenType.CurlyL)) {
+            node.setNestedProperties(this._parseNestedProperties());
+        }
+        else {
+            if (!hasContent) {
+                return this.finish(node, ParseError.PropertyValueExpected);
+            }
+        }
+        if (this.peek(TokenType.SemiColon)) {
+            node.semicolonPosition = this.token.offset; // not part of the declaration, but useful information for code assist
+        }
+        return this.finish(node);
+    }
+    _parseNestedProperties() {
+        const node = this.create(NestedProperties);
+        return this._parseBody(node, this._parseDeclaration.bind(this));
+    }
+    _parseExtends() {
+        if (this.peekKeyword('@extend')) {
+            const node = this.create(ExtendsReference);
+            this.consumeToken();
+            if (!node.getSelectors().addChild(this._parseSimpleSelector())) {
+                return this.finish(node, ParseError.SelectorExpected);
+            }
+            while (this.accept(TokenType.Comma)) {
+                node.getSelectors().addChild(this._parseSimpleSelector());
+            }
+            if (this.accept(TokenType.Exclamation)) {
+                if (!this.acceptIdent('optional')) {
+                    return this.finish(node, ParseError.UnknownKeyword);
+                }
+            }
+            return this.finish(node);
+        }
+        return null;
+    }
+    _parseSimpleSelectorBody() {
+        return this._parseSelectorPlaceholder() || super._parseSimpleSelectorBody();
+    }
+    _parseNestingSelector() {
+        if (this.peekDelim('&')) {
+            const node = this.createNode(NodeType.SelectorCombinator);
+            this.consumeToken();
+            while (!this.hasWhitespace() && (this.acceptDelim('-') || this.accept(TokenType.Num) || this.accept(TokenType.Dimension) || node.addChild(this._parseIdent()) || this.acceptDelim('&'))) {
+                //  support &-foo-1
+            }
+            return this.finish(node);
+        }
+        return null;
+    }
+    _parseSelectorPlaceholder() {
+        if (this.peekDelim('%')) {
+            const node = this.createNode(NodeType.SelectorPlaceholder);
+            this.consumeToken();
+            this._parseIdent();
+            return this.finish(node);
+        }
+        else if (this.peekKeyword('@at-root')) {
+            const node = this.createNode(NodeType.SelectorPlaceholder);
+            this.consumeToken();
+            if (this.accept(TokenType.ParenthesisL)) {
+                if (!this.acceptIdent('with') && !this.acceptIdent('without')) {
+                    return this.finish(node, ParseError.IdentifierExpected);
+                }
+                if (!this.accept(TokenType.Colon)) {
+                    return this.finish(node, ParseError.ColonExpected);
+                }
+                if (!node.addChild(this._parseIdent())) {
+                    return this.finish(node, ParseError.IdentifierExpected);
+                }
+                if (!this.accept(TokenType.ParenthesisR)) {
+                    return this.finish(node, ParseError.RightParenthesisExpected, [TokenType.CurlyR]);
+                }
+            }
+            return this.finish(node);
+        }
+        return null;
+    }
+    _parseElementName() {
+        const pos = this.mark();
+        const node = super._parseElementName();
+        if (node && !this.hasWhitespace() && this.peek(TokenType.ParenthesisL)) { // for #49589
+            this.restoreAtMark(pos);
+            return null;
+        }
+        return node;
+    }
+    _tryParsePseudoIdentifier() {
+        return this._parseInterpolation() || super._tryParsePseudoIdentifier(); // for #49589
+    }
+    _parseWarnAndDebug() {
+        if (!this.peekKeyword('@debug')
+            && !this.peekKeyword('@warn')
+            && !this.peekKeyword('@error')) {
+            return null;
+        }
+        const node = this.createNode(NodeType.Debug);
+        this.consumeToken(); // @debug, @warn or @error
+        node.addChild(this._parseExpr()); // optional
+        return this.finish(node);
+    }
+    _parseControlStatement(parseStatement = this._parseRuleSetDeclaration.bind(this)) {
+        if (!this.peek(TokenType.AtKeyword)) {
+            return null;
+        }
+        return this._parseIfStatement(parseStatement) || this._parseForStatement(parseStatement)
+            || this._parseEachStatement(parseStatement) || this._parseWhileStatement(parseStatement);
+    }
+    _parseIfStatement(parseStatement) {
+        if (!this.peekKeyword('@if')) {
+            return null;
+        }
+        return this._internalParseIfStatement(parseStatement);
+    }
+    _internalParseIfStatement(parseStatement) {
+        const node = this.create(IfStatement);
+        this.consumeToken(); // @if or if
+        if (!node.setExpression(this._parseExpr(true))) {
+            return this.finish(node, ParseError.ExpressionExpected);
+        }
+        this._parseBody(node, parseStatement);
+        if (this.acceptKeyword('@else')) {
+            if (this.peekIdent('if')) {
+                node.setElseClause(this._internalParseIfStatement(parseStatement));
+            }
+            else if (this.peek(TokenType.CurlyL)) {
+                const elseNode = this.create(ElseStatement);
+                this._parseBody(elseNode, parseStatement);
+                node.setElseClause(elseNode);
+            }
+        }
+        return this.finish(node);
+    }
+    _parseForStatement(parseStatement) {
+        if (!this.peekKeyword('@for')) {
+            return null;
+        }
+        const node = this.create(ForStatement);
+        this.consumeToken(); // @for
+        if (!node.setVariable(this._parseVariable())) {
+            return this.finish(node, ParseError.VariableNameExpected, [TokenType.CurlyR]);
+        }
+        if (!this.acceptIdent('from')) {
+            return this.finish(node, SCSSParseError.FromExpected, [TokenType.CurlyR]);
+        }
+        if (!node.addChild(this._parseBinaryExpr())) {
+            return this.finish(node, ParseError.ExpressionExpected, [TokenType.CurlyR]);
+        }
+        if (!this.acceptIdent('to') && !this.acceptIdent('through')) {
+            return this.finish(node, SCSSParseError.ThroughOrToExpected, [TokenType.CurlyR]);
+        }
+        if (!node.addChild(this._parseBinaryExpr())) {
+            return this.finish(node, ParseError.ExpressionExpected, [TokenType.CurlyR]);
+        }
+        return this._parseBody(node, parseStatement);
+    }
+    _parseEachStatement(parseStatement) {
+        if (!this.peekKeyword('@each')) {
+            return null;
+        }
+        const node = this.create(EachStatement);
+        this.consumeToken(); // @each
+        const variables = node.getVariables();
+        if (!variables.addChild(this._parseVariable())) {
+            return this.finish(node, ParseError.VariableNameExpected, [TokenType.CurlyR]);
+        }
+        while (this.accept(TokenType.Comma)) {
+            if (!variables.addChild(this._parseVariable())) {
+                return this.finish(node, ParseError.VariableNameExpected, [TokenType.CurlyR]);
+            }
+        }
+        this.finish(variables);
+        if (!this.acceptIdent('in')) {
+            return this.finish(node, SCSSParseError.InExpected, [TokenType.CurlyR]);
+        }
+        if (!node.addChild(this._parseExpr())) {
+            return this.finish(node, ParseError.ExpressionExpected, [TokenType.CurlyR]);
+        }
+        return this._parseBody(node, parseStatement);
+    }
+    _parseWhileStatement(parseStatement) {
+        if (!this.peekKeyword('@while')) {
+            return null;
+        }
+        const node = this.create(WhileStatement);
+        this.consumeToken(); // @while
+        if (!node.addChild(this._parseBinaryExpr())) {
+            return this.finish(node, ParseError.ExpressionExpected, [TokenType.CurlyR]);
+        }
+        return this._parseBody(node, parseStatement);
+    }
+    _parseFunctionBodyDeclaration() {
+        return this._parseVariableDeclaration() || this._parseReturnStatement() || this._parseWarnAndDebug()
+            || this._parseControlStatement(this._parseFunctionBodyDeclaration.bind(this));
+    }
+    _parseFunctionDeclaration() {
+        if (!this.peekKeyword('@function')) {
+            return null;
+        }
+        const node = this.create(FunctionDeclaration);
+        this.consumeToken(); // @function
+        if (!node.setIdentifier(this._parseIdent([ReferenceType.Function]))) {
+            return this.finish(node, ParseError.IdentifierExpected, [TokenType.CurlyR]);
+        }
+        if (!this.accept(TokenType.ParenthesisL)) {
+            return this.finish(node, ParseError.LeftParenthesisExpected, [TokenType.CurlyR]);
+        }
+        if (node.getParameters().addChild(this._parseParameterDeclaration())) {
+            while (this.accept(TokenType.Comma)) {
+                if (this.peek(TokenType.ParenthesisR)) {
+                    break;
+                }
+                if (!node.getParameters().addChild(this._parseParameterDeclaration())) {
+                    return this.finish(node, ParseError.VariableNameExpected);
+                }
+            }
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected, [TokenType.CurlyR]);
+        }
+        return this._parseBody(node, this._parseFunctionBodyDeclaration.bind(this));
+    }
+    _parseReturnStatement() {
+        if (!this.peekKeyword('@return')) {
+            return null;
+        }
+        const node = this.createNode(NodeType.ReturnStatement);
+        this.consumeToken(); // @function
+        if (!node.addChild(this._parseExpr())) {
+            return this.finish(node, ParseError.ExpressionExpected);
+        }
+        return this.finish(node);
+    }
+    _parseMixinDeclaration() {
+        if (!this.peekKeyword('@mixin')) {
+            return null;
+        }
+        const node = this.create(MixinDeclaration);
+        this.consumeToken();
+        if (!node.setIdentifier(this._parseIdent([ReferenceType.Mixin]))) {
+            return this.finish(node, ParseError.IdentifierExpected, [TokenType.CurlyR]);
+        }
+        if (this.accept(TokenType.ParenthesisL)) {
+            if (node.getParameters().addChild(this._parseParameterDeclaration())) {
+                while (this.accept(TokenType.Comma)) {
+                    if (this.peek(TokenType.ParenthesisR)) {
+                        break;
+                    }
+                    if (!node.getParameters().addChild(this._parseParameterDeclaration())) {
+                        return this.finish(node, ParseError.VariableNameExpected);
+                    }
+                }
+            }
+            if (!this.accept(TokenType.ParenthesisR)) {
+                return this.finish(node, ParseError.RightParenthesisExpected, [TokenType.CurlyR]);
+            }
+        }
+        return this._parseBody(node, this._parseRuleSetDeclaration.bind(this));
+    }
+    _parseParameterDeclaration() {
+        const node = this.create(FunctionParameter);
+        if (!node.setIdentifier(this._parseVariable())) {
+            return null;
+        }
+        if (this.accept(Ellipsis$1)) ;
+        if (this.accept(TokenType.Colon)) {
+            if (!node.setDefaultValue(this._parseExpr(true))) {
+                return this.finish(node, ParseError.VariableValueExpected, [], [TokenType.Comma, TokenType.ParenthesisR]);
+            }
+        }
+        return this.finish(node);
+    }
+    _parseMixinContent() {
+        if (!this.peekKeyword('@content')) {
+            return null;
+        }
+        const node = this.create(MixinContentReference);
+        this.consumeToken();
+        if (this.accept(TokenType.ParenthesisL)) {
+            if (node.getArguments().addChild(this._parseFunctionArgument())) {
+                while (this.accept(TokenType.Comma)) {
+                    if (this.peek(TokenType.ParenthesisR)) {
+                        break;
+                    }
+                    if (!node.getArguments().addChild(this._parseFunctionArgument())) {
+                        return this.finish(node, ParseError.ExpressionExpected);
+                    }
+                }
+            }
+            if (!this.accept(TokenType.ParenthesisR)) {
+                return this.finish(node, ParseError.RightParenthesisExpected);
+            }
+        }
+        return this.finish(node);
+    }
+    _parseMixinReference() {
+        if (!this.peekKeyword('@include')) {
+            return null;
+        }
+        const node = this.create(MixinReference);
+        this.consumeToken();
+        // Could be module or mixin identifier, set as mixin as default.
+        const firstIdent = this._parseIdent([ReferenceType.Mixin]);
+        if (!node.setIdentifier(firstIdent)) {
+            return this.finish(node, ParseError.IdentifierExpected, [TokenType.CurlyR]);
+        }
+        // Is a module accessor.
+        if (!this.hasWhitespace() && this.acceptDelim('.') && !this.hasWhitespace()) {
+            const secondIdent = this._parseIdent([ReferenceType.Mixin]);
+            if (!secondIdent) {
+                return this.finish(node, ParseError.IdentifierExpected, [TokenType.CurlyR]);
+            }
+            const moduleToken = this.create(Module);
+            // Re-purpose first matched ident as identifier for module token.
+            firstIdent.referenceTypes = [ReferenceType.Module];
+            moduleToken.setIdentifier(firstIdent);
+            // Override identifier with second ident.
+            node.setIdentifier(secondIdent);
+            node.addChild(moduleToken);
+        }
+        if (this.accept(TokenType.ParenthesisL)) {
+            if (node.getArguments().addChild(this._parseFunctionArgument())) {
+                while (this.accept(TokenType.Comma)) {
+                    if (this.peek(TokenType.ParenthesisR)) {
+                        break;
+                    }
+                    if (!node.getArguments().addChild(this._parseFunctionArgument())) {
+                        return this.finish(node, ParseError.ExpressionExpected);
+                    }
+                }
+            }
+            if (!this.accept(TokenType.ParenthesisR)) {
+                return this.finish(node, ParseError.RightParenthesisExpected);
+            }
+        }
+        if (this.peekIdent('using') || this.peek(TokenType.CurlyL)) {
+            node.setContent(this._parseMixinContentDeclaration());
+        }
+        return this.finish(node);
+    }
+    _parseMixinContentDeclaration() {
+        const node = this.create(MixinContentDeclaration);
+        if (this.acceptIdent('using')) {
+            if (!this.accept(TokenType.ParenthesisL)) {
+                return this.finish(node, ParseError.LeftParenthesisExpected, [TokenType.CurlyL]);
+            }
+            if (node.getParameters().addChild(this._parseParameterDeclaration())) {
+                while (this.accept(TokenType.Comma)) {
+                    if (this.peek(TokenType.ParenthesisR)) {
+                        break;
+                    }
+                    if (!node.getParameters().addChild(this._parseParameterDeclaration())) {
+                        return this.finish(node, ParseError.VariableNameExpected);
+                    }
+                }
+            }
+            if (!this.accept(TokenType.ParenthesisR)) {
+                return this.finish(node, ParseError.RightParenthesisExpected, [TokenType.CurlyL]);
+            }
+        }
+        if (this.peek(TokenType.CurlyL)) {
+            this._parseBody(node, this._parseMixinReferenceBodyStatement.bind(this));
+        }
+        return this.finish(node);
+    }
+    _parseMixinReferenceBodyStatement() {
+        return this._tryParseKeyframeSelector() || this._parseRuleSetDeclaration();
+    }
+    _parseFunctionArgument() {
+        // [variableName ':'] expression | variableName '...'
+        const node = this.create(FunctionArgument);
+        const pos = this.mark();
+        const argument = this._parseVariable();
+        if (argument) {
+            if (!this.accept(TokenType.Colon)) {
+                if (this.accept(Ellipsis$1)) { // optional
+                    node.setValue(argument);
+                    return this.finish(node);
+                }
+                else {
+                    this.restoreAtMark(pos);
+                }
+            }
+            else {
+                node.setIdentifier(argument);
+            }
+        }
+        if (node.setValue(this._parseExpr(true))) {
+            this.accept(Ellipsis$1); // #43746
+            node.addChild(this._parsePrio()); // #9859
+            return this.finish(node);
+        }
+        else if (node.setValue(this._tryParsePrio())) {
+            return this.finish(node);
+        }
+        return null;
+    }
+    _parseURLArgument() {
+        const pos = this.mark();
+        const node = super._parseURLArgument();
+        if (!node || !this.peek(TokenType.ParenthesisR)) {
+            this.restoreAtMark(pos);
+            const node = this.create(Node);
+            node.addChild(this._parseBinaryExpr());
+            return this.finish(node);
+        }
+        return node;
+    }
+    _parseOperation() {
+        if (!this.peek(TokenType.ParenthesisL)) {
+            return null;
+        }
+        const node = this.create(Node);
+        this.consumeToken();
+        while (node.addChild(this._parseListElement())) {
+            this.accept(TokenType.Comma); // optional
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected);
+        }
+        return this.finish(node);
+    }
+    _parseListElement() {
+        const node = this.create(ListEntry);
+        const child = this._parseBinaryExpr();
+        if (!child) {
+            return null;
+        }
+        if (this.accept(TokenType.Colon)) {
+            node.setKey(child);
+            if (!node.setValue(this._parseBinaryExpr())) {
+                return this.finish(node, ParseError.ExpressionExpected);
+            }
+        }
+        else {
+            node.setValue(child);
+        }
+        return this.finish(node);
+    }
+    _parseUse() {
+        if (!this.peekKeyword('@use')) {
+            return null;
+        }
+        const node = this.create(Use);
+        this.consumeToken(); // @use
+        if (!node.addChild(this._parseStringLiteral())) {
+            return this.finish(node, ParseError.StringLiteralExpected);
+        }
+        if (!this.peek(TokenType.SemiColon) && !this.peek(TokenType.EOF)) {
+            if (!this.peekRegExp(TokenType.Ident, /as|with/)) {
+                return this.finish(node, ParseError.UnknownKeyword);
+            }
+            if (this.acceptIdent('as') &&
+                (!node.setIdentifier(this._parseIdent([ReferenceType.Module])) && !this.acceptDelim('*'))) {
+                return this.finish(node, ParseError.IdentifierOrWildcardExpected);
+            }
+            if (this.acceptIdent('with')) {
+                if (!node.setParameters(this._parseModuleConfig())) {
+                    return this.finish(node, ParseError.LeftParenthesisExpected, [TokenType.ParenthesisR]);
+                }
+            }
+        }
+        if (!this.accept(TokenType.SemiColon) && !this.accept(TokenType.EOF)) {
+            return this.finish(node, ParseError.SemiColonExpected);
+        }
+        return this.finish(node);
+    }
+    _parseModuleConfig() {
+        const node = this.createNode(NodeType.ModuleConfig);
+        if (!this.accept(TokenType.ParenthesisL)) {
+            return null;
+        }
+        // First variable statement, no comma.
+        if (!node.addChild(this._parseModuleConfigDeclaration())) {
+            return this.finish(node, ParseError.VariableNameExpected);
+        }
+        while (this.accept(TokenType.Comma)) {
+            if (this.peek(TokenType.ParenthesisR)) {
+                break;
+            }
+            if (!node.addChild(this._parseModuleConfigDeclaration())) {
+                return this.finish(node, ParseError.VariableNameExpected);
+            }
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected);
+        }
+        return this.finish(node);
+    }
+    _parseModuleConfigDeclaration() {
+        const node = this.create(ModuleConfiguration);
+        if (!node.setIdentifier(this._parseVariable())) {
+            return null;
+        }
+        if (!this.accept(TokenType.Colon) || !node.setValue(this._parseExpr(true))) {
+            return this.finish(node, ParseError.VariableValueExpected, [], [TokenType.Comma, TokenType.ParenthesisR]);
+        }
+        if (this.accept(TokenType.Exclamation)) {
+            if (this.hasWhitespace() || !this.acceptIdent('default')) {
+                return this.finish(node, ParseError.UnknownKeyword);
+            }
+        }
+        return this.finish(node);
+    }
+    _parseForward() {
+        if (!this.peekKeyword('@forward')) {
+            return null;
+        }
+        const node = this.create(Forward);
+        this.consumeToken();
+        if (!node.addChild(this._parseStringLiteral())) {
+            return this.finish(node, ParseError.StringLiteralExpected);
+        }
+        if (this.acceptIdent('as')) {
+            const identifier = this._parseIdent([ReferenceType.Forward]);
+            if (!node.setIdentifier(identifier)) {
+                return this.finish(node, ParseError.IdentifierExpected);
+            }
+            // Wildcard must be the next character after the identifier string.
+            if (this.hasWhitespace() || !this.acceptDelim('*')) {
+                return this.finish(node, ParseError.WildcardExpected);
+            }
+        }
+        if (this.acceptIdent('with')) {
+            if (!node.setParameters(this._parseModuleConfig())) {
+                return this.finish(node, ParseError.LeftParenthesisExpected, [TokenType.ParenthesisR]);
+            }
+        }
+        else if (this.peekIdent('hide') || this.peekIdent('show')) {
+            if (!node.addChild(this._parseForwardVisibility())) {
+                return this.finish(node, ParseError.IdentifierOrVariableExpected);
+            }
+        }
+        if (!this.accept(TokenType.SemiColon) && !this.accept(TokenType.EOF)) {
+            return this.finish(node, ParseError.SemiColonExpected);
+        }
+        return this.finish(node);
+    }
+    _parseForwardVisibility() {
+        const node = this.create(ForwardVisibility);
+        // Assume to be "hide" or "show".
+        node.setIdentifier(this._parseIdent());
+        while (node.addChild(this._parseVariable() || this._parseIdent())) {
+            // Consume all variables and idents ahead.
+            this.accept(TokenType.Comma);
+        }
+        // More than just identifier
+        return node.getChildren().length > 1 ? node : null;
+    }
+    _parseSupportsCondition() {
+        return this._parseInterpolation() || super._parseSupportsCondition();
+    }
+}
 
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
@@ -22677,6 +23656,718 @@ class LESSScanner extends Scanner {
             return this.stream.advanceIfChar(_TIC) ? TokenType.EscapedJavaScript : TokenType.BadEscapedJavaScript;
         }
         return null;
+    }
+}
+
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+/// <summary>
+/// A parser for LESS
+/// http://lesscss.org/
+/// </summary>
+class LESSParser extends Parser {
+    constructor() {
+        super(new LESSScanner());
+    }
+    _parseStylesheetStatement(isNested = false) {
+        if (this.peek(TokenType.AtKeyword)) {
+            return this._parseVariableDeclaration()
+                || this._parsePlugin()
+                || super._parseStylesheetAtStatement(isNested);
+        }
+        return this._tryParseMixinDeclaration()
+            || this._tryParseMixinReference()
+            || this._parseFunction()
+            || this._parseRuleset(true);
+    }
+    _parseImport() {
+        if (!this.peekKeyword('@import') && !this.peekKeyword('@import-once') /* deprecated in less 1.4.1 */) {
+            return null;
+        }
+        const node = this.create(Import);
+        this.consumeToken();
+        // less 1.4.1: @import (css) "lib"
+        if (this.accept(TokenType.ParenthesisL)) {
+            if (!this.accept(TokenType.Ident)) {
+                return this.finish(node, ParseError.IdentifierExpected, [TokenType.SemiColon]);
+            }
+            do {
+                if (!this.accept(TokenType.Comma)) {
+                    break;
+                }
+            } while (this.accept(TokenType.Ident));
+            if (!this.accept(TokenType.ParenthesisR)) {
+                return this.finish(node, ParseError.RightParenthesisExpected, [TokenType.SemiColon]);
+            }
+        }
+        if (!node.addChild(this._parseURILiteral()) && !node.addChild(this._parseStringLiteral())) {
+            return this.finish(node, ParseError.URIOrStringExpected, [TokenType.SemiColon]);
+        }
+        if (!this.peek(TokenType.SemiColon) && !this.peek(TokenType.EOF)) {
+            node.setMedialist(this._parseMediaQueryList());
+        }
+        return this._completeParseImport(node);
+    }
+    _parsePlugin() {
+        if (!this.peekKeyword('@plugin')) {
+            return null;
+        }
+        const node = this.createNode(NodeType.Plugin);
+        this.consumeToken(); // @import
+        if (!node.addChild(this._parseStringLiteral())) {
+            return this.finish(node, ParseError.StringLiteralExpected);
+        }
+        if (!this.accept(TokenType.SemiColon)) {
+            return this.finish(node, ParseError.SemiColonExpected);
+        }
+        return this.finish(node);
+    }
+    _parseMediaQuery() {
+        const node = super._parseMediaQuery();
+        if (!node) {
+            const node = this.create(MediaQuery);
+            if (node.addChild(this._parseVariable())) {
+                return this.finish(node);
+            }
+            return null;
+        }
+        return node;
+    }
+    _parseMediaDeclaration(isNested = false) {
+        return this._tryParseRuleset(isNested)
+            || this._tryToParseDeclaration()
+            || this._tryParseMixinDeclaration()
+            || this._tryParseMixinReference()
+            || this._parseDetachedRuleSetMixin()
+            || this._parseStylesheetStatement(isNested);
+    }
+    _parseMediaFeatureName() {
+        return this._parseIdent() || this._parseVariable();
+    }
+    _parseVariableDeclaration(panic = []) {
+        const node = this.create(VariableDeclaration);
+        const mark = this.mark();
+        if (!node.setVariable(this._parseVariable(true))) {
+            return null;
+        }
+        if (this.accept(TokenType.Colon)) {
+            if (this.prevToken) {
+                node.colonPosition = this.prevToken.offset;
+            }
+            if (node.setValue(this._parseDetachedRuleSet())) {
+                node.needsSemicolon = false;
+            }
+            else if (!node.setValue(this._parseExpr())) {
+                return this.finish(node, ParseError.VariableValueExpected, [], panic);
+            }
+            node.addChild(this._parsePrio());
+        }
+        else {
+            this.restoreAtMark(mark);
+            return null; // at keyword, but no ':', not a variable declaration but some at keyword
+        }
+        if (this.peek(TokenType.SemiColon)) {
+            node.semicolonPosition = this.token.offset; // not part of the declaration, but useful information for code assist
+        }
+        return this.finish(node);
+    }
+    _parseDetachedRuleSet() {
+        let mark = this.mark();
+        // "Anonymous mixin" used in each() and possibly a generic type in the future
+        if (this.peekDelim('#') || this.peekDelim('.')) {
+            this.consumeToken();
+            if (!this.hasWhitespace() && this.accept(TokenType.ParenthesisL)) {
+                let node = this.create(MixinDeclaration);
+                if (node.getParameters().addChild(this._parseMixinParameter())) {
+                    while (this.accept(TokenType.Comma) || this.accept(TokenType.SemiColon)) {
+                        if (this.peek(TokenType.ParenthesisR)) {
+                            break;
+                        }
+                        if (!node.getParameters().addChild(this._parseMixinParameter())) {
+                            this.markError(node, ParseError.IdentifierExpected, [], [TokenType.ParenthesisR]);
+                        }
+                    }
+                }
+                if (!this.accept(TokenType.ParenthesisR)) {
+                    this.restoreAtMark(mark);
+                    return null;
+                }
+            }
+            else {
+                this.restoreAtMark(mark);
+                return null;
+            }
+        }
+        if (!this.peek(TokenType.CurlyL)) {
+            return null;
+        }
+        const content = this.create(BodyDeclaration);
+        this._parseBody(content, this._parseDetachedRuleSetBody.bind(this));
+        return this.finish(content);
+    }
+    _parseDetachedRuleSetBody() {
+        return this._tryParseKeyframeSelector() || this._parseRuleSetDeclaration();
+    }
+    _addLookupChildren(node) {
+        if (!node.addChild(this._parseLookupValue())) {
+            return false;
+        }
+        let expectsValue = false;
+        while (true) {
+            if (this.peek(TokenType.BracketL)) {
+                expectsValue = true;
+            }
+            if (!node.addChild(this._parseLookupValue())) {
+                break;
+            }
+            expectsValue = false;
+        }
+        return !expectsValue;
+    }
+    _parseLookupValue() {
+        const node = this.create(Node);
+        const mark = this.mark();
+        if (!this.accept(TokenType.BracketL)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        if (((node.addChild(this._parseVariable(false, true)) ||
+            node.addChild(this._parsePropertyIdentifier())) &&
+            this.accept(TokenType.BracketR)) || this.accept(TokenType.BracketR)) {
+            return node;
+        }
+        this.restoreAtMark(mark);
+        return null;
+    }
+    _parseVariable(declaration = false, insideLookup = false) {
+        const isPropertyReference = !declaration && this.peekDelim('$');
+        if (!this.peekDelim('@') && !isPropertyReference && !this.peek(TokenType.AtKeyword)) {
+            return null;
+        }
+        const node = this.create(Variable);
+        const mark = this.mark();
+        while (this.acceptDelim('@') || (!declaration && this.acceptDelim('$'))) {
+            if (this.hasWhitespace()) {
+                this.restoreAtMark(mark);
+                return null;
+            }
+        }
+        if (!this.accept(TokenType.AtKeyword) && !this.accept(TokenType.Ident)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        if (!insideLookup && this.peek(TokenType.BracketL)) {
+            if (!this._addLookupChildren(node)) {
+                this.restoreAtMark(mark);
+                return null;
+            }
+        }
+        return node;
+    }
+    _parseTermExpression() {
+        return this._parseVariable() ||
+            this._parseEscaped() ||
+            super._parseTermExpression() || // preference for colors before mixin references
+            this._tryParseMixinReference(false);
+    }
+    _parseEscaped() {
+        if (this.peek(TokenType.EscapedJavaScript) ||
+            this.peek(TokenType.BadEscapedJavaScript)) {
+            const node = this.createNode(NodeType.EscapedValue);
+            this.consumeToken();
+            return this.finish(node);
+        }
+        if (this.peekDelim('~')) {
+            const node = this.createNode(NodeType.EscapedValue);
+            this.consumeToken();
+            if (this.accept(TokenType.String) || this.accept(TokenType.EscapedJavaScript)) {
+                return this.finish(node);
+            }
+            else {
+                return this.finish(node, ParseError.TermExpected);
+            }
+        }
+        return null;
+    }
+    _parseOperator() {
+        const node = this._parseGuardOperator();
+        if (node) {
+            return node;
+        }
+        else {
+            return super._parseOperator();
+        }
+    }
+    _parseGuardOperator() {
+        if (this.peekDelim('>')) {
+            const node = this.createNode(NodeType.Operator);
+            this.consumeToken();
+            this.acceptDelim('=');
+            return node;
+        }
+        else if (this.peekDelim('=')) {
+            const node = this.createNode(NodeType.Operator);
+            this.consumeToken();
+            this.acceptDelim('<');
+            return node;
+        }
+        else if (this.peekDelim('<')) {
+            const node = this.createNode(NodeType.Operator);
+            this.consumeToken();
+            this.acceptDelim('=');
+            return node;
+        }
+        return null;
+    }
+    _parseRuleSetDeclaration() {
+        if (this.peek(TokenType.AtKeyword)) {
+            return this._parseKeyframe()
+                || this._parseMedia(true)
+                || this._parseImport()
+                || this._parseSupports(true) // @supports
+                || this._parseLayer() // @layer
+                || this._parsePropertyAtRule() // @property
+                || this._parseContainer(true) // @container
+                || this._parseDetachedRuleSetMixin() // less detached ruleset mixin
+                || this._parseVariableDeclaration() // Variable declarations
+                || this._parseRuleSetDeclarationAtStatement();
+        }
+        return this._tryParseMixinDeclaration()
+            || this._tryParseRuleset(true) // nested ruleset
+            || this._tryParseMixinReference() // less mixin reference
+            || this._parseFunction()
+            || this._parseExtend() // less extend declaration
+            || this._parseDeclaration(); // try css ruleset declaration as the last option
+    }
+    _parseKeyframeIdent() {
+        return this._parseIdent([ReferenceType.Keyframe]) || this._parseVariable();
+    }
+    _parseKeyframeSelector() {
+        return this._parseDetachedRuleSetMixin() // less detached ruleset mixin
+            || super._parseKeyframeSelector();
+    }
+    // public _parseSimpleSelectorBody(): nodes.Node | null {
+    // 	return this._parseNestingSelector() || super._parseSimpleSelectorBody();
+    // }
+    _parseSelector(isNested) {
+        // CSS Guards
+        const node = this.create(Selector);
+        let hasContent = false;
+        if (isNested) {
+            // nested selectors can start with a combinator
+            hasContent = node.addChild(this._parseCombinator());
+        }
+        while (node.addChild(this._parseSimpleSelector())) {
+            hasContent = true;
+            const mark = this.mark();
+            if (node.addChild(this._parseGuard()) && this.peek(TokenType.CurlyL)) {
+                break;
+            }
+            this.restoreAtMark(mark);
+            node.addChild(this._parseCombinator()); // optional
+        }
+        return hasContent ? this.finish(node) : null;
+    }
+    _parseNestingSelector() {
+        if (this.peekDelim('&')) {
+            const node = this.createNode(NodeType.SelectorCombinator);
+            this.consumeToken();
+            while (!this.hasWhitespace() && (this.acceptDelim('-') || this.accept(TokenType.Num) || this.accept(TokenType.Dimension) || node.addChild(this._parseIdent()) || this.acceptDelim('&'))) {
+                //  support &-foo
+            }
+            return this.finish(node);
+        }
+        return null;
+    }
+    _parseSelectorIdent() {
+        if (!this.peekInterpolatedIdent()) {
+            return null;
+        }
+        const node = this.createNode(NodeType.SelectorInterpolation);
+        const hasContent = this._acceptInterpolatedIdent(node);
+        return hasContent ? this.finish(node) : null;
+    }
+    _parsePropertyIdentifier(inLookup = false) {
+        const propertyRegex = /^[\w-]+/;
+        if (!this.peekInterpolatedIdent() && !this.peekRegExp(this.token.type, propertyRegex)) {
+            return null;
+        }
+        const mark = this.mark();
+        const node = this.create(Identifier);
+        node.isCustomProperty = this.acceptDelim('-') && this.acceptDelim('-');
+        let childAdded = false;
+        if (!inLookup) {
+            if (node.isCustomProperty) {
+                childAdded = this._acceptInterpolatedIdent(node);
+            }
+            else {
+                childAdded = this._acceptInterpolatedIdent(node, propertyRegex);
+            }
+        }
+        else {
+            if (node.isCustomProperty) {
+                childAdded = node.addChild(this._parseIdent());
+            }
+            else {
+                childAdded = node.addChild(this._parseRegexp(propertyRegex));
+            }
+        }
+        if (!childAdded) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        if (!inLookup && !this.hasWhitespace()) {
+            this.acceptDelim('+');
+            if (!this.hasWhitespace()) {
+                this.acceptIdent('_');
+            }
+        }
+        return this.finish(node);
+    }
+    peekInterpolatedIdent() {
+        return this.peek(TokenType.Ident) ||
+            this.peekDelim('@') ||
+            this.peekDelim('$') ||
+            this.peekDelim('-');
+    }
+    _acceptInterpolatedIdent(node, identRegex) {
+        let hasContent = false;
+        const indentInterpolation = () => {
+            const pos = this.mark();
+            if (this.acceptDelim('-')) {
+                if (!this.hasWhitespace()) {
+                    this.acceptDelim('-');
+                }
+                if (this.hasWhitespace()) {
+                    this.restoreAtMark(pos);
+                    return null;
+                }
+            }
+            return this._parseInterpolation();
+        };
+        const accept = identRegex ?
+            () => this.acceptRegexp(identRegex) :
+            () => this.accept(TokenType.Ident);
+        while (accept() ||
+            node.addChild(this._parseInterpolation() ||
+                this.try(indentInterpolation))) {
+            hasContent = true;
+            if (this.hasWhitespace()) {
+                break;
+            }
+        }
+        return hasContent;
+    }
+    _parseInterpolation() {
+        // @{name} Variable or
+        // ${name} Property
+        const mark = this.mark();
+        if (this.peekDelim('@') || this.peekDelim('$')) {
+            const node = this.createNode(NodeType.Interpolation);
+            this.consumeToken();
+            if (this.hasWhitespace() || !this.accept(TokenType.CurlyL)) {
+                this.restoreAtMark(mark);
+                return null;
+            }
+            if (!node.addChild(this._parseIdent())) {
+                return this.finish(node, ParseError.IdentifierExpected);
+            }
+            if (!this.accept(TokenType.CurlyR)) {
+                return this.finish(node, ParseError.RightCurlyExpected);
+            }
+            return this.finish(node);
+        }
+        return null;
+    }
+    _tryParseMixinDeclaration() {
+        const mark = this.mark();
+        const node = this.create(MixinDeclaration);
+        if (!node.setIdentifier(this._parseMixinDeclarationIdentifier()) || !this.accept(TokenType.ParenthesisL)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        if (node.getParameters().addChild(this._parseMixinParameter())) {
+            while (this.accept(TokenType.Comma) || this.accept(TokenType.SemiColon)) {
+                if (this.peek(TokenType.ParenthesisR)) {
+                    break;
+                }
+                if (!node.getParameters().addChild(this._parseMixinParameter())) {
+                    this.markError(node, ParseError.IdentifierExpected, [], [TokenType.ParenthesisR]);
+                }
+            }
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        node.setGuard(this._parseGuard());
+        if (!this.peek(TokenType.CurlyL)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        return this._parseBody(node, this._parseMixInBodyDeclaration.bind(this));
+    }
+    _parseMixInBodyDeclaration() {
+        return this._parseFontFace() || this._parseRuleSetDeclaration();
+    }
+    _parseMixinDeclarationIdentifier() {
+        let identifier;
+        if (this.peekDelim('#') || this.peekDelim('.')) {
+            identifier = this.create(Identifier);
+            this.consumeToken(); // # or .
+            if (this.hasWhitespace() || !identifier.addChild(this._parseIdent())) {
+                return null;
+            }
+        }
+        else if (this.peek(TokenType.Hash)) {
+            identifier = this.create(Identifier);
+            this.consumeToken(); // TokenType.Hash
+        }
+        else {
+            return null;
+        }
+        identifier.referenceTypes = [ReferenceType.Mixin];
+        return this.finish(identifier);
+    }
+    _parsePseudo() {
+        if (!this.peek(TokenType.Colon)) {
+            return null;
+        }
+        const mark = this.mark();
+        const node = this.create(ExtendsReference);
+        this.consumeToken(); // :
+        if (this.acceptIdent('extend')) {
+            return this._completeExtends(node);
+        }
+        this.restoreAtMark(mark);
+        return super._parsePseudo();
+    }
+    _parseExtend() {
+        if (!this.peekDelim('&')) {
+            return null;
+        }
+        const mark = this.mark();
+        const node = this.create(ExtendsReference);
+        this.consumeToken(); // &
+        if (this.hasWhitespace() || !this.accept(TokenType.Colon) || !this.acceptIdent('extend')) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        return this._completeExtends(node);
+    }
+    _completeExtends(node) {
+        if (!this.accept(TokenType.ParenthesisL)) {
+            return this.finish(node, ParseError.LeftParenthesisExpected);
+        }
+        const selectors = node.getSelectors();
+        if (!selectors.addChild(this._parseSelector(true))) {
+            return this.finish(node, ParseError.SelectorExpected);
+        }
+        while (this.accept(TokenType.Comma)) {
+            if (!selectors.addChild(this._parseSelector(true))) {
+                return this.finish(node, ParseError.SelectorExpected);
+            }
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected);
+        }
+        return this.finish(node);
+    }
+    _parseDetachedRuleSetMixin() {
+        if (!this.peek(TokenType.AtKeyword)) {
+            return null;
+        }
+        const mark = this.mark();
+        const node = this.create(MixinReference);
+        if (node.addChild(this._parseVariable(true)) && (this.hasWhitespace() || !this.accept(TokenType.ParenthesisL))) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected);
+        }
+        return this.finish(node);
+    }
+    _tryParseMixinReference(atRoot = true) {
+        const mark = this.mark();
+        const node = this.create(MixinReference);
+        let identifier = this._parseMixinDeclarationIdentifier();
+        while (identifier) {
+            this.acceptDelim('>');
+            const nextId = this._parseMixinDeclarationIdentifier();
+            if (nextId) {
+                node.getNamespaces().addChild(identifier);
+                identifier = nextId;
+            }
+            else {
+                break;
+            }
+        }
+        if (!node.setIdentifier(identifier)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        let hasArguments = false;
+        if (this.accept(TokenType.ParenthesisL)) {
+            hasArguments = true;
+            if (node.getArguments().addChild(this._parseMixinArgument())) {
+                while (this.accept(TokenType.Comma) || this.accept(TokenType.SemiColon)) {
+                    if (this.peek(TokenType.ParenthesisR)) {
+                        break;
+                    }
+                    if (!node.getArguments().addChild(this._parseMixinArgument())) {
+                        return this.finish(node, ParseError.ExpressionExpected);
+                    }
+                }
+            }
+            if (!this.accept(TokenType.ParenthesisR)) {
+                return this.finish(node, ParseError.RightParenthesisExpected);
+            }
+            identifier.referenceTypes = [ReferenceType.Mixin];
+        }
+        else {
+            identifier.referenceTypes = [ReferenceType.Mixin, ReferenceType.Rule];
+        }
+        if (this.peek(TokenType.BracketL)) {
+            if (!atRoot) {
+                this._addLookupChildren(node);
+            }
+        }
+        else {
+            node.addChild(this._parsePrio());
+        }
+        if (!hasArguments && !this.peek(TokenType.SemiColon) && !this.peek(TokenType.CurlyR) && !this.peek(TokenType.EOF)) {
+            this.restoreAtMark(mark);
+            return null;
+        }
+        return this.finish(node);
+    }
+    _parseMixinArgument() {
+        // [variableName ':'] expression | variableName '...'
+        const node = this.create(FunctionArgument);
+        const pos = this.mark();
+        const argument = this._parseVariable();
+        if (argument) {
+            if (!this.accept(TokenType.Colon)) {
+                this.restoreAtMark(pos);
+            }
+            else {
+                node.setIdentifier(argument);
+            }
+        }
+        if (node.setValue(this._parseDetachedRuleSet() || this._parseExpr(true))) {
+            return this.finish(node);
+        }
+        this.restoreAtMark(pos);
+        return null;
+    }
+    _parseMixinParameter() {
+        const node = this.create(FunctionParameter);
+        // special rest variable: @rest...
+        if (this.peekKeyword('@rest')) {
+            const restNode = this.create(Node);
+            this.consumeToken();
+            if (!this.accept(Ellipsis)) {
+                return this.finish(node, ParseError.DotExpected, [], [TokenType.Comma, TokenType.ParenthesisR]);
+            }
+            node.setIdentifier(this.finish(restNode));
+            return this.finish(node);
+        }
+        // special const args: ...
+        if (this.peek(Ellipsis)) {
+            const varargsNode = this.create(Node);
+            this.consumeToken();
+            node.setIdentifier(this.finish(varargsNode));
+            return this.finish(node);
+        }
+        let hasContent = false;
+        // default variable declaration: @param: 12 or @name
+        if (node.setIdentifier(this._parseVariable())) {
+            this.accept(TokenType.Colon);
+            hasContent = true;
+        }
+        if (!node.setDefaultValue(this._parseDetachedRuleSet() || this._parseExpr(true)) && !hasContent) {
+            return null;
+        }
+        return this.finish(node);
+    }
+    _parseGuard() {
+        if (!this.peekIdent('when')) {
+            return null;
+        }
+        const node = this.create(LessGuard);
+        this.consumeToken(); // when
+        if (!node.getConditions().addChild(this._parseGuardCondition())) {
+            return this.finish(node, ParseError.ConditionExpected);
+        }
+        while (this.acceptIdent('and') || this.accept(TokenType.Comma)) {
+            if (!node.getConditions().addChild(this._parseGuardCondition())) {
+                return this.finish(node, ParseError.ConditionExpected);
+            }
+        }
+        return this.finish(node);
+    }
+    _parseGuardCondition() {
+        const node = this.create(GuardCondition);
+        node.isNegated = this.acceptIdent('not');
+        if (!this.accept(TokenType.ParenthesisL)) {
+            if (node.isNegated) {
+                return this.finish(node, ParseError.LeftParenthesisExpected);
+            }
+            return null;
+        }
+        if (!node.addChild(this._parseExpr())) ;
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected);
+        }
+        return this.finish(node);
+    }
+    _parseFunction() {
+        const pos = this.mark();
+        const node = this.create(Function);
+        if (!node.setIdentifier(this._parseFunctionIdentifier())) {
+            return null;
+        }
+        if (this.hasWhitespace() || !this.accept(TokenType.ParenthesisL)) {
+            this.restoreAtMark(pos);
+            return null;
+        }
+        if (node.getArguments().addChild(this._parseMixinArgument())) {
+            while (this.accept(TokenType.Comma) || this.accept(TokenType.SemiColon)) {
+                if (this.peek(TokenType.ParenthesisR)) {
+                    break;
+                }
+                if (!node.getArguments().addChild(this._parseMixinArgument())) {
+                    return this.finish(node, ParseError.ExpressionExpected);
+                }
+            }
+        }
+        if (!this.accept(TokenType.ParenthesisR)) {
+            return this.finish(node, ParseError.RightParenthesisExpected);
+        }
+        return this.finish(node);
+    }
+    _parseFunctionIdentifier() {
+        if (this.peekDelim('%')) {
+            const node = this.create(Identifier);
+            node.referenceTypes = [ReferenceType.Function];
+            this.consumeToken();
+            return this.finish(node);
+        }
+        return super._parseFunctionIdentifier();
+    }
+    _parseURLArgument() {
+        const pos = this.mark();
+        const node = super._parseURLArgument();
+        if (!node || !this.peek(TokenType.ParenthesisR)) {
+            this.restoreAtMark(pos);
+            const node = this.create(Node);
+            node.addChild(this._parseBinaryExpr());
+            return this.finish(node);
+        }
+        return node;
     }
 }
 
@@ -57476,6 +59167,157 @@ function getSelectionRanges(document, positions, stylesheet) {
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
+class SCSSNavigation extends CSSNavigation {
+    constructor(fileSystemProvider) {
+        super(fileSystemProvider, true);
+    }
+    isRawStringDocumentLinkNode(node) {
+        return (super.isRawStringDocumentLinkNode(node) ||
+            node.type === NodeType.Use ||
+            node.type === NodeType.Forward);
+    }
+    async mapReference(target, isRawLink) {
+        if (this.fileSystemProvider && target && isRawLink) {
+            const pathVariations = toPathVariations(target);
+            for (const variation of pathVariations) {
+                if (await this.fileExists(variation)) {
+                    return variation;
+                }
+            }
+        }
+        return target;
+    }
+    async resolveReference(target, documentUri, documentContext, isRawLink = false) {
+        if (startsWith(target, 'sass:')) {
+            return undefined; // sass library
+        }
+        // Following the [sass package importer](https://github.com/sass/sass/blob/f6832f974c61e35c42ff08b3640ff155071a02dd/js-api-doc/importer.d.ts#L349),
+        // look for the `exports` field of the module and any `sass`, `style` or `default` that matches the import.
+        // If it's only `pkg:module`, also look for `sass` and `style` on the root of package.json.
+        if (target.startsWith('pkg:')) {
+            return this.resolvePkgModulePath(target, documentUri, documentContext);
+        }
+        return super.resolveReference(target, documentUri, documentContext, isRawLink);
+    }
+    async resolvePkgModulePath(target, documentUri, documentContext) {
+        const bareTarget = target.replace('pkg:', '');
+        const moduleName = bareTarget.includes('/') ? getModuleNameFromPath(bareTarget) : bareTarget;
+        const rootFolderUri = documentContext.resolveReference('/', documentUri);
+        const documentFolderUri = dirname(documentUri);
+        const modulePath = await this.resolvePathToModule(moduleName, documentFolderUri, rootFolderUri);
+        if (!modulePath) {
+            return undefined;
+        }
+        // Since submodule exports import strings don't match the file system,
+        // we need the contents of `package.json` to look up the correct path.
+        let packageJsonContent = await this.getContent(joinPath(modulePath, 'package.json'));
+        if (!packageJsonContent) {
+            return undefined;
+        }
+        let packageJson;
+        try {
+            packageJson = JSON.parse(packageJsonContent);
+        }
+        catch (e) {
+            // problems parsing package.json
+            return undefined;
+        }
+        const subpath = bareTarget.substring(moduleName.length + 1);
+        if (packageJson.exports) {
+            if (!subpath) {
+                // exports may look like { "sass": "./_index.scss" } or { ".": { "sass": "./_index.scss" } }
+                const rootExport = packageJson.exports["."] || packageJson.exports;
+                // look for the default/index export
+                // @ts-expect-error If ['.'] is a string this just produces undefined
+                const entry = rootExport && (rootExport['sass'] || rootExport['style'] || rootExport['default']);
+                // the 'default' entry can be whatever, typically .js – confirm it looks like `scss`
+                if (entry && entry.endsWith('.scss')) {
+                    const entryPath = joinPath(modulePath, entry);
+                    return entryPath;
+                }
+            }
+            else {
+                // The import string may be with or without .scss.
+                // Likewise the exports entry. Look up both paths.
+                // However, they need to be relative (start with ./).
+                const lookupSubpath = subpath.endsWith('.scss') ? `./${subpath.replace('.scss', '')}` : `./${subpath}`;
+                const lookupSubpathScss = subpath.endsWith('.scss') ? `./${subpath}` : `./${subpath}.scss`;
+                const subpathObject = packageJson.exports[lookupSubpathScss] || packageJson.exports[lookupSubpath];
+                if (subpathObject) {
+                    // @ts-expect-error If subpathObject is a string this just produces undefined
+                    const entry = subpathObject['sass'] || subpathObject['styles'] || subpathObject['default'];
+                    // the 'default' entry can be whatever, typically .js – confirm it looks like `scss`
+                    if (entry && entry.endsWith('.scss')) {
+                        const entryPath = joinPath(modulePath, entry);
+                        return entryPath;
+                    }
+                }
+                else {
+                    // We have a subpath, but found no matches on direct lookup.
+                    // It may be a [subpath pattern](https://nodejs.org/api/packages.html#subpath-patterns).
+                    for (const [maybePattern, subpathObject] of Object.entries(packageJson.exports)) {
+                        if (!maybePattern.includes("*")) {
+                            continue;
+                        }
+                        // Patterns may also be without `.scss` on the left side, so compare without on both sides
+                        const re = new RegExp(convertSimple2RegExpPattern(maybePattern.replace('.scss', '')).replace(/\.\*/g, '(.*)'));
+                        const match = re.exec(lookupSubpath);
+                        if (match) {
+                            // @ts-expect-error If subpathObject is a string this just produces undefined
+                            const entry = subpathObject['sass'] || subpathObject['styles'] || subpathObject['default'];
+                            // the 'default' entry can be whatever, typically .js – confirm it looks like `scss`
+                            if (entry && entry.endsWith('.scss')) {
+                                // The right-hand side of a subpath pattern is also a pattern.
+                                // Replace the pattern with the match from our regexp capture group above.
+                                const expandedPattern = entry.replace('*', match[1]);
+                                const entryPath = joinPath(modulePath, expandedPattern);
+                                return entryPath;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else if (!subpath && (packageJson.sass || packageJson.style)) {
+            // Fall back to a direct lookup on `sass` and `style` on package root
+            const entry = packageJson.sass || packageJson.style;
+            if (entry) {
+                const entryPath = joinPath(modulePath, entry);
+                return entryPath;
+            }
+        }
+        return undefined;
+    }
+}
+function toPathVariations(target) {
+    // No variation for links that ends with .css suffix
+    if (target.endsWith('.css')) {
+        return [target];
+    }
+    // If a link is like a/, try resolving a/index.scss and a/_index.scss
+    if (target.endsWith('/')) {
+        return [target + 'index.scss', target + '_index.scss'];
+    }
+    const targetUri = URI.parse(target.replace(/\.scss$/, ''));
+    const basename = Utils.basename(targetUri);
+    const dirname = Utils.dirname(targetUri);
+    if (basename.startsWith('_')) {
+        // No variation for links such as _a
+        return [Utils.joinPath(dirname, basename + '.scss').toString(true)];
+    }
+    return [
+        Utils.joinPath(dirname, basename + '.scss').toString(true),
+        Utils.joinPath(dirname, '_' + basename + '.scss').toString(true),
+        target + '/index.scss',
+        target + '/_index.scss',
+        Utils.joinPath(dirname, basename + '.css').toString(true)
+    ];
+}
+
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
 function createFacade(parser, completion, hover, navigation, codeActions, validation, cssDataManager) {
     return {
         configure: (settings) => {
@@ -57514,32 +59356,94 @@ function getCSSLanguageService(options = defaultLanguageServiceOptions) {
     const cssDataManager = new CSSDataManager(options);
     return createFacade(new Parser(), new CSSCompletion(null, options, cssDataManager), new CSSHover(options && options.clientCapabilities, cssDataManager), new CSSNavigation(options && options.fileSystemProvider, false), new CSSCodeActions(cssDataManager), new CSSValidation(cssDataManager), cssDataManager);
 }
+function getSCSSLanguageService(options = defaultLanguageServiceOptions) {
+    const cssDataManager = new CSSDataManager(options);
+    return createFacade(new SCSSParser(), new SCSSCompletion(options, cssDataManager), new CSSHover(options && options.clientCapabilities, cssDataManager), new SCSSNavigation(options && options.fileSystemProvider), new CSSCodeActions(cssDataManager), new CSSValidation(cssDataManager), cssDataManager);
+}
+function getLESSLanguageService(options = defaultLanguageServiceOptions) {
+    const cssDataManager = new CSSDataManager(options);
+    return createFacade(new LESSParser(), new LESSCompletion(options, cssDataManager), new CSSHover(options && options.clientCapabilities, cssDataManager), new CSSNavigation(options && options.fileSystemProvider, true), new CSSCodeActions(cssDataManager), new CSSValidation(cssDataManager), cssDataManager);
+}
 
 let cssServer = null;
-const sheetMap = new Map();
+const sheetMap$2 = new Map();
 function openCssTextdocument(document) {
     if (!cssServer) {
         cssServer = getCSSLanguageService();
     }
-    sheetMap.set(document.uri, cssServer.parseStylesheet(document));
+    sheetMap$2.set(document.uri, cssServer.parseStylesheet(document));
 }
 function changeCssTextdocument(document) {
-    sheetMap.set(document.uri, cssServer.parseStylesheet(document));
+    sheetMap$2.set(document.uri, cssServer.parseStylesheet(document));
 }
 function closeCssTextdocument(document) {
-    sheetMap.delete(document.uri);
+    sheetMap$2.delete(document.uri);
 }
 function doHoverOnCss(document, position) {
-    const sheet = sheetMap.get(document.uri);
+    const sheet = sheetMap$2.get(document.uri);
     return cssServer.doHover(document, position, sheet);
 }
 function doCompleteOnCss(document, position) {
-    const sheet = sheetMap.get(document.uri);
+    const sheet = sheetMap$2.get(document.uri);
     return cssServer.doComplete(document, position, sheet);
 }
 function doValidateCss(document) {
-    const sheet = sheetMap.get(document.uri);
+    const sheet = sheetMap$2.get(document.uri);
     return cssServer.doValidation(document, sheet);
+}
+
+let scssServer = null;
+const sheetMap$1 = new Map();
+function openScssTextdocument(document) {
+    if (!scssServer) {
+        scssServer = getSCSSLanguageService();
+    }
+    sheetMap$1.set(document.uri, scssServer.parseStylesheet(document));
+}
+function changeScssTextdocument(document) {
+    sheetMap$1.set(document.uri, scssServer.parseStylesheet(document));
+}
+function closeScssTextdocument(document) {
+    sheetMap$1.delete(document.uri);
+}
+function doHoverOnScss(document, position) {
+    const sheet = sheetMap$1.get(document.uri);
+    return scssServer.doHover(document, position, sheet);
+}
+function doCompleteOnScss(document, position) {
+    const sheet = sheetMap$1.get(document.uri);
+    return scssServer.doComplete(document, position, sheet);
+}
+function doValidateScss(document) {
+    const sheet = sheetMap$1.get(document.uri);
+    return scssServer.doValidation(document, sheet);
+}
+
+let lessServer = null;
+const sheetMap = new Map();
+function openLessTextdocument(document) {
+    if (!lessServer) {
+        lessServer = getLESSLanguageService();
+    }
+    sheetMap.set(document.uri, lessServer.parseStylesheet(document));
+}
+function changeLessTextdocument(document) {
+    sheetMap.set(document.uri, lessServer.parseStylesheet(document));
+}
+function closeLessTextdocument(document) {
+    sheetMap.delete(document.uri);
+}
+function doHoverOnLess(document, position) {
+    const sheet = sheetMap.get(document.uri);
+    return lessServer.doHover(document, position, sheet);
+}
+function doCompleteOnLess(document, position) {
+    const sheet = sheetMap.get(document.uri);
+    return lessServer.doComplete(document, position, sheet);
+}
+function doValidateLess(document) {
+    const sheet = sheetMap.get(document.uri);
+    return lessServer.doValidation(document, sheet);
 }
 
 // Create a connection for the server, using Node's IPC as a transport.
@@ -57582,6 +59486,18 @@ connection.languages.diagnostics.on(async (params) => {
             items: doValidateCss(document),
         };
     }
+    else if (document?.languageId === "scss") {
+        return {
+            kind: nodeExports.DocumentDiagnosticReportKind.Full,
+            items: doValidateScss(document),
+        };
+    }
+    else if (document?.languageId === "less") {
+        return {
+            kind: nodeExports.DocumentDiagnosticReportKind.Full,
+            items: doValidateLess(document),
+        };
+    }
     else {
         return {
             kind: nodeExports.DocumentDiagnosticReportKind.Full,
@@ -57589,12 +59505,15 @@ connection.languages.diagnostics.on(async (params) => {
         };
     }
 });
-connection.onDidChangeWatchedFiles((_change) => {
-    connection.console.log("We received a file change event");
-});
 documents.onDidOpen((params) => {
     if (params.document.languageId === "css") {
         openCssTextdocument(params.document);
+    }
+    else if (params.document.languageId === "scss") {
+        openScssTextdocument(params.document);
+    }
+    else if (params.document.languageId === "less") {
+        openLessTextdocument(params.document);
     }
 });
 // The content of a text document has changed. This event is emitted
@@ -57609,10 +59528,34 @@ documents.onDidChangeContent((change) => {
             diagnostics: diags,
         });
     }
+    else if (change.document.languageId === "scss") {
+        changeScssTextdocument(change.document);
+        const diags = doValidateScss(change.document);
+        connection.sendDiagnostics({
+            uri: change.document.uri,
+            version: change.document.version,
+            diagnostics: diags,
+        });
+    }
+    else if (change.document.languageId === "less") {
+        changeLessTextdocument(change.document);
+        const diags = doValidateLess(change.document);
+        connection.sendDiagnostics({
+            uri: change.document.uri,
+            version: change.document.version,
+            diagnostics: diags,
+        });
+    }
 });
 documents.onDidClose((params) => {
     if (params.document.languageId === "css") {
         closeCssTextdocument(params.document);
+    }
+    else if (params.document.languageId === "scss") {
+        closeScssTextdocument(params.document);
+    }
+    else if (params.document.languageId === "less") {
+        closeLessTextdocument(params.document);
     }
 });
 connection.onHover((params) => {
@@ -57620,12 +59563,24 @@ connection.onHover((params) => {
     if (document.languageId === "css") {
         return doHoverOnCss(document, params.position);
     }
+    else if (document.languageId === "scss") {
+        return doHoverOnScss(document, params.position);
+    }
+    else if (document.languageId === "less") {
+        return doHoverOnLess(document, params.position);
+    }
     return null;
 });
 connection.onCompletion((params) => {
     const document = documents.get(params.textDocument.uri);
     if (document.languageId === "css") {
         return doCompleteOnCss(document, params.position);
+    }
+    else if (document.languageId === "scss") {
+        return doCompleteOnScss(document, params.position);
+    }
+    else if (document.languageId === "less") {
+        return doCompleteOnLess(document, params.position);
     }
     return null;
 });

@@ -240,9 +240,9 @@ fn get_suffix_from_html(html_document: &HTMLDocument) -> &'static str {
         .find(|v| v.tag.as_ref().is_some_and(|tag| tag == "style"));
     if let Some(style) = style {
         if let Some(v) = style.attributes.get("lang") {
-            if v.value.as_ref().is_some_and(|v| v == "scss") {
+            if v.value.as_ref().is_some_and(|v| v == "\"scss\"") {
                 ".scss"
-            } else if v.value.as_ref().is_some_and(|v| v == "less") {
+            } else if v.value.as_ref().is_some_and(|v| v == "\"less\"") {
                 ".less"
             } else {
                 ".css"
