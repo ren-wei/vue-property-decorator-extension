@@ -625,10 +625,10 @@ mod tests {
 
     use tower_lsp::lsp_types::{Location, Position, Range, Uri};
 
-    use crate::renderer::{
+    use crate::{renderer::{
         render_cache::{RenderCache, RenderCacheGraph},
         Renderer,
-    };
+    }, util};
 
     #[test]
     fn parse_lib() {
@@ -638,11 +638,12 @@ mod tests {
             path = path.parent().unwrap().to_path_buf();
         }
         path = path.parent().unwrap().to_path_buf();
-        let lib_uri = Uri::from_str(&format!(
-            "file://{}/node_modules/element-ui",
-            path.display()
-        ))
-        .unwrap();
+        println!("{:?}", util::create_uri_from_path(&path).as_str());
+
+        let mut lib_path = path.clone();
+        lib_path.push("node_modules/element-ui");
+
+        let lib_uri = util::create_uri_from_path(&lib_path);
 
         let cache_graph = RenderCacheGraph::new();
         let mut renderer = Renderer {
@@ -665,14 +666,11 @@ mod tests {
             assert!(alert.description.is_some());
             assert!(alert.props.len() > 0);
             let title = alert.props.iter().find(|v| v.name == "title").unwrap();
+            path.push("node_modules/element-ui/types/alert.d.ts");
             assert_eq!(
                 title.location,
                 Location {
-                    uri: Uri::from_str(&format!(
-                        "file://{}/node_modules/element-ui/types/alert.d.ts",
-                        path.display()
-                    ))
-                    .unwrap(),
+                    uri: util::create_uri_from_path(&path),
                     range: Range {
                         start: Position {
                             line: 8,

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use tower_lsp::lsp_types::Uri;
 
@@ -21,8 +21,7 @@ pub fn parse_alias(tsconfig: &str, root_uri: &Uri) -> HashMap<String, String> {
                                 if value.len() == 1 {
                                     if let Some(value) = value[0].as_str() {
                                         if value.ends_with("/*") {
-                                            let value = root_path.join(&value[..value.len() - 1]);
-                                            alias.insert(key, value.to_str().unwrap().to_string());
+                                            alias.insert(key, format!("{}/{}", root_path.to_string_lossy(), &value[..value.len() - 1]));
                                         }
                                     }
                                 }
@@ -73,7 +72,15 @@ pub fn parse_import_path(
                     }
                 }
                 // 其他情况，将该部分添加到结果路径中
-                _ => result.push(part),
+                _ => {
+                    let inner = result.as_mut_os_string();
+                    let buf = inner.as_encoded_bytes();
+                    let need_sep = buf.last().map(|c| *c != b'/').unwrap_or(false);
+                    if need_sep {
+                        inner.push("/");
+                    }
+                    inner.push(part);
+                }
             }
         }
         return result;
@@ -87,7 +94,12 @@ pub fn parse_import_path(
         }
     }
     // 可能位于 node_modules 中
-    util::to_file_path(root_uri).join("node_modules").join(path)
+    let mut path = util::to_file_path(root_uri).join("node_modules").join(path);
+    #[cfg(target_os="windows")]
+    {
+        path = PathBuf::from_str(&path.to_string_lossy().replace("\\", "/")).unwrap();
+    }
+    path
 }
 
 #[cfg(test)]
