@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use std::str::FromStr;
 use std::{collections::HashMap, path::PathBuf};
 
 use tower_lsp::lsp_types::Uri;
@@ -104,9 +106,12 @@ pub fn parse_import_path(
     let path = util::to_file_path(root_uri).join("node_modules").join(path);
     #[cfg(target_os = "windows")]
     {
-        return PathBuf::from_str(&path.to_string_lossy().replace("\\", "/")).unwrap();
+        PathBuf::from_str(&path.to_string_lossy().replace("\\", "/")).unwrap()
     }
-    path
+    #[cfg(not(target_os = "windows"))]
+    {
+        path
+    }
 }
 
 #[cfg(test)]
