@@ -66,7 +66,7 @@ impl TsServer {
         while !path.file_name().is_some_and(|name| name == "server") {
             path = path.parent().unwrap().to_path_buf();
         }
-        path.push("tsserver.mjs");
+        path.push("typescript-language-server.mjs");
 
         let (server, mut rx) = LspServer::new("node", [path.to_str().unwrap(), "--stdio"]);
         let server_ = server.clone();

@@ -292,10 +292,14 @@ impl Renderer {
     /// * 是文件
     /// * 存在于文件系统中
     /// * 不在 node_modules 中
+    /// * 不在 .git 中
     pub fn is_uri_valid(uri: &Uri) -> bool {
         let file_path = util::to_file_path(uri);
         if cfg!(not(test)) {
-            file_path.is_file() && !file_path.to_string_lossy().contains("/node_modules/")
+            let file_path_str = file_path.to_string_lossy();
+            file_path.is_file()
+                && !file_path_str.contains("/node_modules/")
+                && !file_path_str.contains("/.git/")
         } else {
             !file_path.to_string_lossy().contains("/node_modules/")
         }

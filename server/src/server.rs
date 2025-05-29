@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
@@ -251,11 +252,8 @@ impl LanguageServer for VueLspServer {
                             .flatten(),
                         file_operations: Some(WorkspaceFileOperationsServerCapabilities {
                             will_create: file_operation.clone(),
-                            did_create: file_operation.clone(),
                             will_rename: file_operation.clone(),
-                            did_rename: file_operation.clone(),
-                            will_delete: None,
-                            did_delete: file_operation,
+                            ..Default::default()
                         }),
                     }),
                     execute_command_provider: Some(ExecuteCommandOptions {
@@ -438,40 +436,74 @@ impl LanguageServer for VueLspServer {
     }
 
     async fn will_create_files(&self, params: CreateFilesParams) -> Result<Option<WorkspaceEdit>> {
-        self.renderer.lock().await.will_create_files(&params);
+        let mut uris = vec![];
+        for file in params.files {
+            let uri = Uri::from_str(&file.uri).unwrap();
+            uris.push(uri);
+        }
+        self.renderer.lock().await.will_create_files(uris);
         Ok(None)
-    }
-
-    #[instrument]
-    async fn did_create_files(&self, params: CreateFilesParams) {
-        debug!("start");
-        let start_time = time::Instant::now();
-        self.renderer.lock().await.did_create_files(params).await;
-        debug!("done: {:?}", start_time.elapsed());
     }
 
     async fn will_rename_files(&self, params: RenameFilesParams) -> Result<Option<WorkspaceEdit>> {
         {
-            self.renderer.lock().await.will_rename_files(&params);
+            let mut uris = vec![];
+            for file in &params.files {
+                let uri = Uri::from_str(&file.new_uri).unwrap();
+                uris.push(uri);
+            }
+            self.renderer.lock().await.will_create_files(uris);
         }
         let response = self.ts_server.read().await.will_rename_files(params).await;
         response
     }
 
-    async fn did_rename_files(&self, params: RenameFilesParams) {
-        self.renderer.lock().await.did_rename_files(params).await;
-    }
-
-    #[instrument]
-    async fn did_delete_files(&self, params: DeleteFilesParams) {
-        debug!("start");
-        let start_time = time::Instant::now();
-        self.renderer.lock().await.did_delete_files(params).await;
-        debug!("done: {:?}", start_time.elapsed());
-    }
-
     async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
         self.get_configure().await;
+    }
+
+    /// 监听到文件变更
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        let mut did_create_files = vec![];
+        let mut did_delete_files = vec![];
+        let mut did_change_files = vec![];
+        let text_documents = self.text_documents.read().await;
+        for file in params.changes {
+            match file.typ {
+                FileChangeType::CREATED => {
+                    if Renderer::is_uri_valid(&file.uri) {
+                        did_create_files.push(file.uri);
+                    }
+                }
+                FileChangeType::DELETED => {
+                    if Renderer::is_uri_valid(&file.uri) {
+                        did_delete_files.push(file.uri);
+                    }
+                }
+                FileChangeType::CHANGED => {
+                    if Renderer::is_uri_valid(&file.uri)
+                        && text_documents.get_document(&file.uri).is_none()
+                    {
+                        did_change_files.push(file.uri);
+                    }
+                }
+                _ => {}
+            }
+        }
+        drop(text_documents);
+
+        let mut renderer = self.renderer.lock().await;
+        if did_create_files.len() > 0 {
+            renderer.did_create_files(did_create_files).await;
+        }
+        if did_delete_files.len() > 0 {
+            renderer.did_delete_files(did_delete_files);
+        }
+        if did_change_files.len() > 0 {
+            for uri in did_change_files {
+                renderer.save(&uri).await;
+            }
+        }
     }
 
     #[instrument]

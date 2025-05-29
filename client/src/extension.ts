@@ -1,5 +1,5 @@
 import * as path from "path";
-import { ExtensionContext } from "vscode";
+import { ExtensionContext, workspace } from "vscode";
 
 import {
     LanguageClient,
@@ -27,6 +27,9 @@ export function activate(context: ExtensionContext) {
 
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: "file", language: "typescript" }, { scheme: "file", language: "vue" }],
+        synchronize: {
+            fileEvents: workspace.createFileSystemWatcher("**"),
+        },
         progressOnInitialization: true,
     };
 

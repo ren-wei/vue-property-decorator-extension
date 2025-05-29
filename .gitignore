@@ -1,5 +1,6 @@
 out
 node_modules
 client/server
+server/log
 .vscode-test
 .DS_Store

@@ -15,9 +15,9 @@ client/node_modules/**
 !client/node_modules/{minimatch,brace-expansion,concat-map,balanced-match}/**
 !client/node_modules/{semver,lru-cache,yallist}/**
 server/**
-!server/tsserver.mjs
 !server/css-lsp-server.js
 !server/css-lsp-server.js.map
+!server/typescript-language-server.mjs
 !server/target/release/vue-property-decorator-extension-server
 !server/target/x86_64-pc-windows-gnu/release/vue-property-decorator-extension-server.exe
 !server/target/x86_64-unknown-linux-musl/release/vue-property-decorator-extension-server

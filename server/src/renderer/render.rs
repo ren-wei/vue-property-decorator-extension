@@ -1,6 +1,5 @@
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use lsp_textdocument::FullTextDocument;
 use tokio::{
@@ -9,8 +8,8 @@ use tokio::{
 };
 use tower_lsp::{
     lsp_types::{
-        CreateFilesParams, DeleteFilesParams, DidChangeTextDocumentParams, ProgressToken,
-        RenameFilesParams, TextDocumentContentChangeEvent, Uri, VersionedTextDocumentIdentifier,
+        DidChangeTextDocumentParams, ProgressToken, TextDocumentContentChangeEvent, Uri,
+        VersionedTextDocumentIdentifier,
     },
     Client,
 };
@@ -257,19 +256,17 @@ impl Renderer {
         }
     }
 
-    pub fn will_create_files(&mut self, params: &CreateFilesParams) {
-        for file in &params.files {
-            let uri = Uri::from_str(&file.uri).unwrap();
+    pub fn will_create_files(&mut self, uris: Vec<Uri>) {
+        for uri in uris {
             if Renderer::is_uri_valid(&uri) {
                 self.will_create_files.insert(uri);
             }
         }
     }
 
-    pub async fn did_create_files(&mut self, params: CreateFilesParams) {
+    pub async fn did_create_files(&mut self, uris: Vec<Uri>) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
-        for file in params.files {
-            let uri = Uri::from_str(&file.uri).unwrap();
+        for uri in uris {
             if Renderer::is_uri_valid(&uri) {
                 self.create_node(&uri).await;
                 self.render_cache
@@ -280,40 +277,9 @@ impl Renderer {
         self.render_cache.flush();
     }
 
-    pub fn will_rename_files(&mut self, params: &RenameFilesParams) {
-        for file in &params.files {
-            let uri = Uri::from_str(&file.new_uri).unwrap();
-            if Renderer::is_uri_valid(&uri) {
-                self.will_create_files
-                    .insert(Uri::from_str(&file.new_uri).unwrap());
-            }
-        }
-    }
-
-    pub async fn did_rename_files(&mut self, params: RenameFilesParams) {
+    pub fn did_delete_files(&mut self, uris: Vec<Uri>) {
         let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
-        for file in params.files {
-            let old_uri = Uri::from_str(&file.old_uri).unwrap();
-            if Renderer::is_uri_valid(&old_uri) {
-                self.render_cache
-                    .remove_node(&old_uri, &root_uri, &target_root_uri);
-            }
-
-            let new_uri = Uri::from_str(&file.new_uri).unwrap();
-            if Renderer::is_uri_valid(&new_uri) {
-                self.create_node(&new_uri).await;
-                self.render_cache
-                    .render_node(&new_uri, &root_uri, &target_root_uri);
-                self.will_create_files.remove(&new_uri);
-            }
-        }
-        self.render_cache.flush();
-    }
-
-    pub async fn did_delete_files(&mut self, params: DeleteFilesParams) {
-        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
-        for file in params.files {
-            let uri = Uri::from_str(&file.uri).unwrap();
+        for uri in uris {
             if self.render_cache.get(&uri).is_some() {
                 self.render_cache.update_incoming_node_version(&uri);
                 self.render_cache
@@ -625,10 +591,13 @@ mod tests {
 
     use tower_lsp::lsp_types::{Location, Position, Range, Uri};
 
-    use crate::{renderer::{
-        render_cache::{RenderCache, RenderCacheGraph},
-        Renderer,
-    }, util};
+    use crate::{
+        renderer::{
+            render_cache::{RenderCache, RenderCacheGraph},
+            Renderer,
+        },
+        util,
+    };
 
     #[test]
     fn parse_lib() {
@@ -638,7 +607,6 @@ mod tests {
             path = path.parent().unwrap().to_path_buf();
         }
         path = path.parent().unwrap().to_path_buf();
-        println!("{:?}", util::create_uri_from_path(&path).as_str());
 
         let mut lib_path = path.clone();
         lib_path.push("node_modules/element-ui");
