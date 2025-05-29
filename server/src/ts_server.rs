@@ -111,7 +111,7 @@ impl TsServer {
             capabilities: params.capabilities.clone(),
             workspace_folders: params.workspace_folders.clone(),
             initialization_options: Some(json!({
-                "locale": "zh-CN",
+                "locale": params.locale,
             })),
             work_done_progress_params: WorkDoneProgressParams {
                 work_done_token: None,
