@@ -205,7 +205,7 @@ impl Renderer {
     /// 保存 vue 节点，重新全量渲染，返回变更内容
     pub async fn save(&mut self, uri: &Uri) -> Option<DidChangeTextDocumentParams> {
         // 保存前再次全量解析 vue 节点为 update 出错提供修复机会
-        let version = self.render_cache.get(uri).unwrap().get_version()?;
+        let version = self.render_cache.get(uri)?.get_version()?;
         self.render_cache.remove_outgoing_edge(uri);
         self.create_node(uri).await;
         self.render_cache.flush();
