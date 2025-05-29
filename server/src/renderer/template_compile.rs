@@ -237,7 +237,7 @@ impl TemplateCompileResult {
     }
 
     fn add_wrap(&mut self, target: &str) {
-        self.render += &target.replace("\n", " ");
+        self.render += &target.replace("\r", " ").replace("\n", " ");
         self.offset += target.len();
     }
 
@@ -251,7 +251,7 @@ impl TemplateCompileResult {
         // 第一个必定存在，并且不需要加 `this.` 前缀
         let first = split.next().unwrap();
         if first.len() > 0 {
-            self.render += &first.replace("\n", " ");
+            self.render += &first.replace("\r", " ").replace("\n", " ");
             self.mapping.push((self.offset, original, first.len()));
             self.offset += first.len();
             original += first.len();
@@ -314,6 +314,20 @@ mod tests {
             r#"<template><ProjectHeader :title="title" :job="" /></template>"#,
             &["(title);", "();"].join(""),
             &[(1, 33, 5), (9, 46, 0)],
+        );
+    }
+
+    #[test]
+    fn line_breaks() {
+        assert_render(
+            "<template><ProjectHeader :fields=\"{\n  title: 'text', value: 'v'\n  }\"></ProjectHeader></template>",
+            &["({   title: 'text', value: 'v'   });"].join(""),
+            &[(1, 34, 33)],
+        );
+        assert_render(
+            "<template><ProjectHeader :fields=\"{\r\n  title: 'text', value: 'v'\r\n  }\"></ProjectHeader></template>",
+            &["({    title: 'text', value: 'v'    });"].join(""),
+            &[(1, 34, 35)],
         );
     }
 
