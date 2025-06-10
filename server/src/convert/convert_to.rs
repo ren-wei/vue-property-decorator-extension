@@ -337,7 +337,7 @@ mod tests {
     use super::ConvertTo;
 
     async fn assert_uri(uri: &str, expected: &str) {
-        let mut renderer = Renderer::new();
+        let renderer = Renderer::new();
         renderer.set_root_uri_target_uri(
             Uri::from_str("file:///home/user/project").unwrap(),
             Uri::from_str("file:///home/user/.~$project").unwrap(),

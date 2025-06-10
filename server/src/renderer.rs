@@ -17,6 +17,7 @@ pub use render_cache::RenderCachePropType;
 use tags_provider::ArcTagsProvider;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+use tokio::sync::OnceCell;
 use tower_lsp::lsp_types::Location;
 
 use std::collections::HashSet;
@@ -33,7 +34,7 @@ use crate::util;
 /// # 渲染器
 /// 将项目渲染到同目录下的加上 `.~$` 前缀的目录中
 pub struct Renderer {
-    root_uri_target_uri: Option<(Uri, Uri)>,
+    root_uri_target_uri: OnceCell<(Uri, Uri)>,
     alias: HashMap<String, String>,
     render_cache: RenderCacheGraph,
     provider_map: HashMap<Uri, ArcTagsProvider>,
@@ -46,7 +47,7 @@ pub struct Renderer {
 impl Renderer {
     pub fn new() -> Renderer {
         Renderer {
-            root_uri_target_uri: None,
+            root_uri_target_uri: OnceCell::new(),
             alias: HashMap::new(),
             render_cache: RenderCacheGraph::new(),
             provider_map: HashMap::new(),
@@ -55,13 +56,15 @@ impl Renderer {
         }
     }
 
-    pub fn root_uri_target_uri(&self) -> &Option<(Uri, Uri)> {
-        &self.root_uri_target_uri
+    pub fn root_uri_target_uri(&self) -> &(Uri, Uri) {
+        self.root_uri_target_uri.get().unwrap()
     }
 
     #[cfg(test)]
-    pub fn set_root_uri_target_uri(&mut self, root_uri: Uri, target_uri: Uri) {
-        self.root_uri_target_uri = Some((root_uri, target_uri));
+    pub fn set_root_uri_target_uri(&self, root_uri: Uri, target_uri: Uri) {
+        self.root_uri_target_uri
+            .set((root_uri, target_uri))
+            .unwrap();
     }
 
     pub fn get_document(&self, uri: &Uri) -> Option<&FullTextDocument> {
@@ -398,6 +401,7 @@ mod tests {
     };
 
     use lsp_textdocument::FullTextDocument;
+    use tokio::sync::OnceCell;
     use tower_lsp::lsp_types::{
         DidChangeTextDocumentParams, Position, Range, TextDocumentContentChangeEvent, Uri,
         VersionedTextDocumentIdentifier,
@@ -430,7 +434,7 @@ mod tests {
     fn create_renderer() -> Renderer {
         let cache_graph = RenderCacheGraph::new();
         let mut renderer = Renderer {
-            root_uri_target_uri: Some((
+            root_uri_target_uri: OnceCell::from((
                 Uri::from_str("file:///path/project").unwrap(),
                 Uri::from_str("file:///path/.~$project").unwrap(),
             )),

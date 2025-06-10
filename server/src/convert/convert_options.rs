@@ -10,12 +10,7 @@ pub struct ConvertOptions<'a> {
 
 impl ConvertOptions<'_> {
     pub fn root_uri_target_uri(&self) -> (&Uri, &Uri) {
-        let (root_uri, dest_uri) = self
-            .renderer
-            .unwrap()
-            .root_uri_target_uri()
-            .as_ref()
-            .unwrap();
+        let (root_uri, dest_uri) = self.renderer.unwrap().root_uri_target_uri();
         (root_uri, dest_uri)
     }
 }

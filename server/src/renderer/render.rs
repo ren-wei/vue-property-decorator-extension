@@ -65,7 +65,9 @@ impl Renderer {
         let node_modules_target_path = target_root_path.join("node_modules");
 
         let target_root_uri = util::create_uri_from_path(&target_root_path);
-        self.root_uri_target_uri = Some((root_uri.clone(), target_root_uri.clone()));
+        self.root_uri_target_uri
+            .set((root_uri.clone(), target_root_uri.clone()))
+            .unwrap();
         progress.report("Initializing...").await;
         self.render(root_uri, &target_root_uri).await;
 
@@ -232,7 +234,7 @@ impl Renderer {
         };
 
         if !cfg!(test) {
-            let (root_uri, target_root_uri) = self.root_uri_target_uri.as_ref().unwrap();
+            let (root_uri, target_root_uri) = self.root_uri_target_uri.get().unwrap();
             self.render_cache
                 .render_node(uri, root_uri, target_root_uri);
         }
@@ -248,7 +250,7 @@ impl Renderer {
     /// 文件打开时检查节点是否存在，如果节点不存在，那么先创建节点
     pub async fn did_open(&mut self, uri: &Uri) {
         if self.render_cache.get(uri).is_none() {
-            let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+            let (root_uri, target_root_uri) = self.root_uri_target_uri.get().unwrap().clone();
             self.create_node(uri).await;
             self.render_cache.flush();
             self.render_cache
@@ -265,7 +267,7 @@ impl Renderer {
     }
 
     pub async fn did_create_files(&mut self, uris: Vec<Uri>) {
-        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.get().unwrap().clone();
         for uri in uris {
             if Renderer::is_uri_valid(&uri) {
                 self.create_node(&uri).await;
@@ -278,7 +280,7 @@ impl Renderer {
     }
 
     pub fn did_delete_files(&mut self, uris: Vec<Uri>) {
-        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.get().unwrap().clone();
         for uri in uris {
             if self.render_cache.get(&uri).is_some() {
                 self.render_cache.update_incoming_node_version(&uri);
@@ -293,7 +295,7 @@ impl Renderer {
         client: &Client,
         work_done_token: ProgressToken,
     ) {
-        let (root_uri, target_root_uri) = self.root_uri_target_uri.clone().unwrap();
+        let (root_uri, target_root_uri) = self.root_uri_target_uri.get().unwrap().clone();
         let target_root_path = util::to_file_path(&target_root_uri);
         fs::remove_dir_all(&target_root_path).await.unwrap();
         self.init(&root_uri, client, work_done_token).await;
@@ -541,7 +543,7 @@ impl Renderer {
             base_uri,
             path,
             &self.alias,
-            &self.root_uri_target_uri.as_ref().unwrap().0,
+            &self.root_uri_target_uri.get().unwrap().0,
         );
         if file_path.is_dir() && file_path.to_string_lossy().contains("/node_modules/") {
             return Some(util::create_uri_from_path(&file_path));
@@ -576,7 +578,7 @@ impl Renderer {
             base_uri,
             path,
             &self.alias,
-            &self.root_uri_target_uri.as_ref().unwrap().0,
+            &self.root_uri_target_uri.get().unwrap().0,
         );
         Some(util::create_uri_from_path(&file_path))
     }
@@ -589,6 +591,7 @@ mod tests {
         str::FromStr,
     };
 
+    use tokio::sync::OnceCell;
     use tower_lsp::lsp_types::{Location, Position, Range, Uri};
 
     use crate::{
@@ -615,7 +618,7 @@ mod tests {
 
         let cache_graph = RenderCacheGraph::new();
         let mut renderer = Renderer {
-            root_uri_target_uri: Some((
+            root_uri_target_uri: OnceCell::from((
                 Uri::from_str("file:///path/project").unwrap(),
                 Uri::from_str("file:///path/.~$project").unwrap(),
             )),
