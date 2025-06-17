@@ -432,6 +432,7 @@ impl LanguageServer for VueLspServer {
             debug!("lock ts_server");
             ts_server.did_save(change).await;
         }
+        self.client.semantic_tokens_refresh().await.unwrap();
         info!("done {:?}", start_time.elapsed());
     }
 
