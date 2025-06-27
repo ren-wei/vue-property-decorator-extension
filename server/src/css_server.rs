@@ -15,10 +15,11 @@ use tower_lsp::{
         ApplyWorkspaceEditParams, ChangeAnnotation, ChangeAnnotationIdentifier, CompletionParams,
         CompletionResponse, Diagnostic, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
         DidOpenTextDocumentParams, DocumentChanges, Hover, HoverParams, InitializeParams,
-        InitializeResult, LogMessageParams, OptionalVersionedTextDocumentIdentifier,
-        PublishDiagnosticsParams, TextDocumentContentChangeEvent, TextDocumentEdit,
-        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, TextEdit, Uri,
-        VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceEdit,
+        InitializeResult, InitializedParams, LogMessageParams,
+        OptionalVersionedTextDocumentIdentifier, PublishDiagnosticsParams,
+        TextDocumentContentChangeEvent, TextDocumentEdit, TextDocumentIdentifier, TextDocumentItem,
+        TextDocumentPositionParams, TextEdit, Uri, VersionedTextDocumentIdentifier,
+        WorkDoneProgressParams, WorkspaceEdit,
     },
     Client,
 };
@@ -80,7 +81,7 @@ impl CssServer {
     }
 
     pub async fn initialized(&self) {
-        self.server.initialized().await;
+        self.server.initialized(InitializedParams {}).await;
     }
 
     pub async fn did_open(&self, params: DidOpenTextDocumentParams, html_document: &HTMLDocument) {

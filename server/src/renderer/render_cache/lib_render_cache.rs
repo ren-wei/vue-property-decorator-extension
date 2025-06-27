@@ -1,6 +1,7 @@
 use html_languageservice::html_data::Description;
 use std::{fs, path::PathBuf};
 use tower_lsp::lsp_types::Location;
+use tracing::error;
 
 use lsp_textdocument::FullTextDocument;
 use swc_common::source_map::SmallPos;
@@ -100,6 +101,14 @@ pub fn parse_specific_lib(uri: &Uri) -> LibRenderCache {
 fn parse_specific_file(path: &PathBuf) -> Option<(LibComponent, Option<String>)> {
     let source = fs::read_to_string(path).unwrap();
     let (module, comments) = ast::parse_source(&source, 0, source.len());
+    if module.is_err() {
+        error!(
+            "lib parse error: {} {:?}",
+            path.as_os_str().to_string_lossy(),
+            module.unwrap_err()
+        );
+        return None;
+    }
     for item in module.unwrap().body {
         if let ModuleItem::ModuleDecl(module) = item {
             if let ModuleDecl::ExportDecl(decl) = module {

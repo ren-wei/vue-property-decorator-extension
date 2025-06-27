@@ -99,7 +99,7 @@ impl TsServer {
             .initialize(self.initialize_params.clone())
             .await
             .unwrap();
-        self.server.initialized().await;
+        self.server.initialized(InitializedParams {}).await;
         for (uri, document) in text_documents.documents() {
             self.did_open(uri, document).await;
         }
@@ -122,7 +122,7 @@ impl TsServer {
     }
 
     pub async fn initialized(&self) {
-        self.server.initialized().await;
+        self.server.initialized(InitializedParams {}).await;
     }
 
     pub async fn did_open(&self, uri: &Uri, document: &FullTextDocument) {
